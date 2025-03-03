@@ -273,7 +273,7 @@ struct
       method impl_item'_IIType ~typ:_ ~parent_bounds:_ =
         default_document_for "impl_item'_IIType"
 
-      method item ~v:_ ~span:_ ~ident:_ ~attrs:_ = default_document_for "item"
+      method item ~v ~span:_ ~ident:_ ~attrs:_ = v#p ^^ break 1
 
       method item'_Alias ~super:_ ~name:_ ~item:_ =
         default_document_for "item'_Alias"
@@ -334,7 +334,7 @@ struct
       method lhs_LhsLocalVar ~var:_ ~typ:_ =
         default_document_for "lhs_LhsLocalVar"
 
-      method literal_Bool _x1 = default_document_for "literal_Bool"
+      method literal_Bool _x1 = default_document_for "HEHE IT COMPILES"
       method literal_Char _x1 = default_document_for "literal_Char"
 
       method literal_Float ~value:_ ~negative:_ ~kind:_ =
