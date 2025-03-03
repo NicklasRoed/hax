@@ -313,8 +313,39 @@ struct
           ~arguments:_ =
         default_document_for "item'_Type_struct"
 
-      method item'_Use ~super:_ ~path:_ ~is_external:_ ~rename:_ =
-        default_document_for "item'_Use"
+      method item'_Use ~super:_ ~path ~is_external ~rename:_ =
+        if List.length path == 0 || is_external then empty
+        else
+          let crate =
+            String.capitalize
+              (Option.value ~default:"(TODO CRATE)"
+                 (Option.bind ~f:List.hd current_namespace))
+          in
+          let concat_capitalize l =
+            String.concat ~sep:"_" (List.map ~f:String.capitalize l)
+          in
+          let concat_capitalize_include l =
+            concat_capitalize (List.drop_last_exn l)
+            ^ " (t_" ^ List.last_exn l ^ ")"
+          in
+          let path_string =
+            match path with
+            | "crate" :: xs -> concat_capitalize_include (crate :: xs)
+            | "super" :: xs ->
+                concat_capitalize
+                  (crate
+                   :: List.drop_last_exn
+                        (Option.value ~default:[]
+                           (Option.bind ~f:List.tl current_namespace))
+                  @ xs)
+            | [ a ] -> a
+            | xs -> concat_capitalize_include xs
+          in
+          if String.is_empty path_string then empty
+          else
+            string "From" ^^ space ^^ string crate ^^ space
+            ^^ string "Require Import" ^^ space ^^ string path_string ^^ dot
+            ^^ break 1 ^^ string "Export" ^^ space ^^ string path_string ^^ dot
 
       method item_quote_origin ~item_kind:_ ~item_ident:_ ~position:_ =
         default_document_for "item_quote_origin"
