@@ -119,7 +119,8 @@ struct
       method error_expr _x1 = default_document_for "error_expr"
       method error_item _x1 = default_document_for "error_item"
       method error_pat _x1 = default_document_for "error_pat"
-      method expr ~e:_ ~span:_ ~typ:_ = default_document_for "expr"
+
+      method expr ~e ~span:_ ~typ:_ = e#p
 
       method expr'_AddressOf ~super:_ ~mut:_ ~e:_ ~witness:_ =
         default_document_for "expr'_AddressOf"
@@ -167,20 +168,19 @@ struct
       method expr'_EffectAction ~super:_ ~action:_ ~argument:_ =
         default_document_for "expr'_EffectAction"
 
-      method expr'_GlobalVar_concrete ~super:_ _x2 =
-        default_document_for "expr'_GlobalVar_concrete"
+      method expr'_GlobalVar_concrete ~super:_ x2 = x2#p
 
-      method expr'_GlobalVar_primitive ~super:_ _x2 =
+      method expr'_GlobalVar_primitive ~super:_ x2 = 
         default_document_for "expr'_GlobalVar_primitive"
 
       method expr'_If ~super:_ ~cond:_ ~then_:_ ~else_:_ =
         default_document_for "expr'_If"
 
-      method expr'_Let ~super:_ ~monadic:_ ~lhs:_ ~rhs:_ ~body:_ =
-        default_document_for "expr'_Let"
+      method expr'_Let ~super:_ ~monadic:_ ~lhs ~rhs ~body:_ =
+        string "let " ^^ lhs#p ^^ string " = " ^^ rhs#p
 
-      method expr'_Literal ~super:_ _x2 = default_document_for "expr'_Literal"
-      method expr'_LocalVar ~super:_ _x2 = default_document_for "expr'_LocalVar"
+      method expr'_Literal ~super:_ x2 = x2#p
+      method expr'_LocalVar ~super:_ x2 = x2#p
 
       method expr'_Loop ~super:_ ~body:_ ~kind:_ ~state:_ ~control_flow:_
           ~label:_ ~witness:_ =
@@ -281,9 +281,9 @@ struct
       method item'_Enum_Variant ~name:_ ~arguments:_ ~is_record:_ ~attrs:_ =
         default_document_for "item'_Enum_Variant"
 
-      method item'_Fn ~super:_ ~name:_ ~generics:_ ~body:_ ~params:_ ~safety:_ =
-        default_document_for "item'_Fn"
-
+        method item'_Fn ~super:_ ~name ~generics ~body ~params ~safety:_ =
+          body#p
+    
       method item'_HaxError ~super:_ _x2 = default_document_for "item'_HaxError"
 
       method item'_IMacroInvokation ~super:_ ~macro:_ ~argument:_ ~span:_
@@ -295,7 +295,7 @@ struct
         default_document_for "item'_Impl"
 
       method item'_NotImplementedYet =
-        default_document_for "item'_NotImplementedYet"
+        string "failwith NotImplementedYet"
 
       method item'_Quote ~super:_ ~quote:_ ~origin:_ =
         default_document_for "item'_Quote"
@@ -365,16 +365,16 @@ struct
       method lhs_LhsLocalVar ~var:_ ~typ:_ =
         default_document_for "lhs_LhsLocalVar"
 
-      method literal_Bool _x1 = default_document_for "HEHE IT COMPILES"
-      method literal_Char _x1 = default_document_for "literal_Char"
+      method literal_Bool x1 = string (Bool.to_string x1)
+      method literal_Char x1 = string "'" ^^ string (Char.to_string x1) ^^ string "'"
 
-      method literal_Float ~value:_ ~negative:_ ~kind:_ =
-        default_document_for "literal_Float"
+      method literal_Float ~value ~negative ~kind:_ =
+        (if negative then !^"-" else empty) ^^ string value
 
-      method literal_Int ~value:_ ~negative:_ ~kind:_ =
-        default_document_for "literal_Int"
+      method literal_Int ~value ~negative ~kind:_ =
+        (if negative then !^"-" else empty) ^^ string value
 
-      method literal_String _x1 = default_document_for "literal_String"
+      method literal_String x1 = string "\"" ^^ string x1 ^^ string "\""
 
       method loop_kind_ForIndexLoop ~start:_ ~end_:_ ~var:_ ~var_typ:_
           ~witness:_ =
@@ -394,16 +394,16 @@ struct
 
       method modul x1 = separate_map (string "\n") (fun x -> x#p) x1
 
-      method param ~pat:_ ~typ:_ ~typ_span:_ ~attrs:_ =
-        default_document_for "param"
+      method param ~pat ~typ ~typ_span:_ ~attrs:_ =
+        string "~" ^^ pat#p ^^ string ": " ^^ typ#p
 
-      method pat ~p:_ ~span:_ ~typ:_ = default_document_for "pat"
+      method pat ~p ~span:_ ~typ:_ = p#p
 
       method pat'_PAscription ~super:_ ~typ:_ ~typ_span:_ ~pat:_ =
         default_document_for "pat'_PAscription"
 
-      method pat'_PBinding ~super:_ ~mut:_ ~mode:_ ~var:_ ~typ:_ ~subpat:_ =
-        default_document_for "pat'_PBinding"
+      method pat'_PBinding ~super:_ ~mut:_ ~mode:_ ~var ~typ:_ ~subpat:_ =
+        var#p
 
       method pat'_PConstant ~super:_ ~lit:_ =
         default_document_for "pat'_PConstant"
@@ -448,10 +448,12 @@ struct
       method trait_item'_TIFn _x1 = default_document_for "trait_item'_TIFn"
       method trait_item'_TIType _x1 = default_document_for "trait_item'_TIType"
 
-      method ty_TApp_application ~typ:_ ~generics:_ =
+      method ty_TApp_application ~typ ~generics =
         default_document_for "ty_TApp_application"
 
-      method ty_TApp_tuple ~types:_ = default_document_for "ty_TApp_tuple"
+      method ty_TApp_tuple ~types = 
+        default_document_for "ty_TApp_tuple"
+
       method ty_TArray ~typ:_ ~length:_ = default_document_for "ty_TArray"
       method ty_TArrow _x1 _x2 = default_document_for "ty_TArrow"
 
@@ -462,9 +464,9 @@ struct
       method ty_TChar = default_document_for "ty_TChar"
       method ty_TDyn ~witness:_ ~goals:_ = default_document_for "ty_TDyn"
       method ty_TFloat _x1 = default_document_for "ty_TFloat"
-      method ty_TInt _x1 = default_document_for "ty_TInt"
+      method ty_TInt x1 = default_document_for "ty_TInt"
       method ty_TOpaque _x1 = default_document_for "ty_TOpaque"
-      method ty_TParam _x1 = default_document_for "ty_TParam"
+      method ty_TParam x1 = default_document_for "ty_TParam"
       method ty_TRawPointer ~witness:_ = default_document_for "ty_TRawPointer"
 
       method ty_TRef ~witness:_ ~region:_ ~typ:_ ~mut:_ =
