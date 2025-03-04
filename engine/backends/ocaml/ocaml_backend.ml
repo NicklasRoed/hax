@@ -232,7 +232,11 @@ struct
       method generic_value_GType _x1 =
         default_document_for "generic_value_GType"
 
-      method generics ~params:_ ~constraints:_ = default_document_for "generics"
+      method generics ~params ~constraints =
+        if List.is_empty params then empty
+        else
+          angles (separate_map comma (fun p -> p#p) params)
+
       method guard ~guard:_ ~span:_ = default_document_for "guard"
 
       method guard'_IfLet ~super:_ ~lhs:_ ~rhs:_ ~witness:_ =
@@ -281,8 +285,33 @@ struct
       method item'_Enum_Variant ~name:_ ~arguments:_ ~is_record:_ ~attrs:_ =
         default_document_for "item'_Enum_Variant"
 
-        method item'_Fn ~super:_ ~name ~generics ~body ~params ~safety:_ =
-          body#p
+      method item'_Fn ~super ~name ~generics ~body ~params ~safety:_ =
+        let is_rec =
+          Set.mem
+            (U.Reducers.collect_concrete_idents#visit_expr () body#v)
+            name#v
+        in
+        let typ =
+          self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body body#v.typ
+        in
+        let param_list = List.filter_map ~f: (
+          fun x ->
+            if x#v.pat.p.var = "_"
+              then ()
+            else x#p) params in
+        let has_params = not (List.is_empty param_list) in
+        let params_doc = if has_params 
+          then separate_map space (fun p -> p#p) params
+        else parens empty 
+        in
+        let keyword = string (if is_rec then "let rec" else "let") in
+        let generics_doc = generics#p in
+        keyword ^^ space ^^ name#p ^^ generics_doc ^^ space ^^ params_doc ^^
+        space ^^ colon ^^ space ^^ typ#p ^^ space ^^ equals ^^ 
+        nest 2 (break 1 ^^ body#p)
+            
+                  
+        
     
       method item'_HaxError ~super:_ _x2 = default_document_for "item'_HaxError"
 
@@ -418,7 +447,7 @@ struct
       method pat'_PDeref ~super:_ ~subpat:_ ~witness:_ =
         default_document_for "pat'_PDeref"
 
-      method pat'_PWild = default_document_for "pat'_PWild"
+      method pat'_PWild = string "_"
       method printer_name = default_string_for "printer_name"
 
       method projection_predicate ~impl:_ ~assoc_item:_ ~typ:_ =
