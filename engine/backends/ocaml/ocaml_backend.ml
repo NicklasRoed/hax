@@ -126,7 +126,7 @@ struct
         default_document_for "expr'_AddressOf"
 
       method expr'_App_application ~super:_ ~f ~args ~generics:_ =
-        default_document_for "expr' _App_application"
+        f#p ^^ concat_map (fun x -> space ^^ parens x#p) args
 
       method expr'_App_constant ~super:_ ~constant:_ ~generics:_ =
         default_document_for "expr'_App_constant"
@@ -312,9 +312,6 @@ struct
         keyword ^^ space ^^ name#p ^^ generics_doc ^^ space ^^ params_doc ^^
         space ^^ colon ^^ space ^^ typ#p ^^ space ^^ equals ^^ 
         nest 2 (break 1 ^^ body#p)
-            
-                  
-        
     
       method item'_HaxError ~super:_ _x2 = default_document_for "item'_HaxError"
 
@@ -488,8 +485,9 @@ struct
         if List.length types == 0 then string "unit"
         else parens (separate_map (comma ^^ space) (fun x -> self#entrypoint_ty x) types)
 
-      method ty_TArray ~typ:_ ~length:_ = default_document_for "ty_TArray"
-      method ty_TArrow _x1 _x2 = default_document_for "ty_TArrow"
+      method ty_TArray ~typ ~length:_ = typ#p ^^ space ^^ string "array" 
+      method ty_TArrow x1 x2 = 
+        concat_map (fun x -> x#p ^^ space ^^ string "->" ^^ space) x1 ^^ x2#p
 
       method ty_TAssociatedType ~impl:_ ~item:_ =
         default_document_for "ty_TAssociatedType"
@@ -507,7 +505,7 @@ struct
         default_document_for "ty_TRef"
 
       method ty_TSlice ~witness:_ ~ty:_ = default_document_for "ty_TSlice"
-      method ty_TStr = default_document_for "ty_TStr"
+      method ty_TStr = string "string"
       (* END GENERATED *)
     end
 
