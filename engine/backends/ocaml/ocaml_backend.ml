@@ -125,8 +125,8 @@ struct
       method expr'_AddressOf ~super:_ ~mut:_ ~e:_ ~witness:_ =
         default_document_for "expr'_AddressOf"
 
-      method expr'_App_application ~super:_ ~f:_ ~args:_ ~generics:_ =
-        default_document_for "expr'_App_application"
+      method expr'_App_application ~super:_ ~f ~args ~generics:_ =
+        default_document_for "expr' _App_application"
 
       method expr'_App_constant ~super:_ ~constant:_ ~generics:_ =
         default_document_for "expr'_App_constant"
@@ -176,8 +176,9 @@ struct
       method expr'_If ~super:_ ~cond:_ ~then_:_ ~else_:_ =
         default_document_for "expr'_If"
 
-      method expr'_Let ~super:_ ~monadic:_ ~lhs ~rhs ~body:_ =
-        string "let " ^^ lhs#p ^^ string " = " ^^ rhs#p
+      method expr'_Let ~super:_ ~monadic:_ ~lhs ~rhs ~body =
+        string "let " ^^ lhs#p ^^ string " = " ^^ rhs#p 
+        ^^ space ^^ string "in" ^^ break 1 ^^ body#p
 
       method expr'_Literal ~super:_ x2 = x2#p
       method expr'_LocalVar ~super:_ x2 = x2#p
