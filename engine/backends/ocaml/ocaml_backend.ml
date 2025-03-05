@@ -344,6 +344,7 @@ struct
           ~arguments:_ =
         default_document_for "item'_Type_struct"
 
+      (*PLACEHOLDER IMPL TAKEN FROM COQ BACKEND*)
       method item'_Use ~super:_ ~path ~is_external ~rename:_ =
         if List.length path == 0 || is_external then empty
         else
@@ -483,7 +484,8 @@ struct
         default_document_for "ty_TApp_application"
 
       method ty_TApp_tuple ~types = 
-        default_document_for "ty_TApp_tuple"
+        if List.length types == 0 then string "unit"
+        else parens (separate_map (comma ^^ space) (fun x -> self#entrypoint_ty x) types)
 
       method ty_TArray ~typ:_ ~length:_ = default_document_for "ty_TArray"
       method ty_TArrow _x1 _x2 = default_document_for "ty_TArrow"
