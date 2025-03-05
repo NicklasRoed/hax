@@ -294,15 +294,17 @@ struct
         let typ =
           self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body body#v.typ
         in
-        let param_list = List.filter_map ~f: (
-          fun x ->
-            if x#v.pat.p.var = "_"
-              then ()
-            else x#p) params in
-        let has_params = not (List.is_empty param_list) in
-        let params_doc = if has_params 
-          then separate_map space (fun p -> p#p) params
-        else parens empty 
+        let param_docs = List.map params ~f:(fun param ->
+          match param#v.pat.p with
+          | PBinding { var; _ } -> string var.name
+          | _ -> failwith "Expected binding pattern for function parameter"
+        ) in
+        let has_params = not (List.is_empty param_docs) in
+        let params_doc = 
+          if has_params then
+            group (separate_map space (fun doc -> doc) param_docs)
+          else 
+            parens empty 
         in
         let keyword = string (if is_rec then "let rec" else "let") in
         let generics_doc = generics#p in
