@@ -92,10 +92,10 @@ struct
       inherit BasePrinter.base
 
       (* BEGIN GENERATED *)
-      method arm ~arm:_ ~span:_ = default_document_for "arm"
+      method arm ~arm ~span:_ = arm#p
 
-      method arm' ~super:_ ~arm_pat:_ ~body:_ ~guard:_ =
-        default_document_for "arm'"
+      method arm' ~super:_ ~arm_pat ~body ~guard:_ =
+        arm_pat#p ^^ space ^^ string "->" ^^ nest 2 (break 1 ^^ body#p)
 
       method attrs _x1 = default_document_for "attrs"
 
@@ -227,8 +227,10 @@ struct
       method expr'_MacroInvokation ~super:_ ~macro:_ ~args:_ ~witness:_ =
         default_document_for "expr'_MacroInvokation"
 
-      method expr'_Match ~super:_ ~scrutinee:_ ~arms:_ =
-        default_document_for "expr'_Match"
+      method expr'_Match ~super:_ ~scrutinee ~arms =
+        string "match" ^^ space ^^ scrutinee#p ^^ space ^^ string "with"
+        ^^ break 1
+        ^^ concat_map (fun x -> string "|" ^^ space ^^ x#p ^^ break 1) arms
 
       method expr'_QuestionMark ~super:_ ~e:_ ~return_typ:_ ~witness:_ =
         default_document_for "expr'_QuestionMark"
@@ -464,8 +466,8 @@ struct
       method pat'_PBinding ~super:_ ~mut:_ ~mode:_ ~var ~typ:_ ~subpat:_ =
         var#p
 
-      method pat'_PConstant ~super:_ ~lit:_ =
-        default_document_for "pat'_PConstant"
+      method pat'_PConstant ~super:_ ~lit =
+        lit#p
 
       method pat'_PConstruct_inductive ~super:_ ~constructor:_ ~is_record:_
           ~is_struct:_ ~fields:_ =
