@@ -498,7 +498,7 @@ struct
       method trait_item'_TIType _x1 = default_document_for "trait_item'_TIType"
 
       method ty_TApp_application ~typ ~generics =
-        default_document_for "ty_TApp_application"
+        typ#p ^^ concat_map (fun x -> space ^^ parens x#p) generics
 
       method ty_TApp_tuple ~types = 
         if List.length types == 0 then string "unit"
