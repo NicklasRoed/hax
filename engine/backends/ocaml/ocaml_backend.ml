@@ -126,7 +126,7 @@ struct
         default_document_for "expr'_AddressOf"
 
       method expr'_App_application ~super:_ ~f ~args ~generics:_ =
-        f#p ^^ concat_map (fun x -> space ^^ parens x#p) args
+        f#p ^^ concat_map (fun x -> space ^^ x#p) args
 
       method expr'_App_constant ~super:_ ~constant:_ ~generics:_ =
         default_document_for "expr'_App_constant"
