@@ -137,8 +137,8 @@ struct
       method expr'_App_tuple_projection ~super:_ ~size:_ ~nth:_ ~e:_ =
         default_document_for "expr'_App_tuple_projection"
 
-      method expr'_Ascription ~super:_ ~e:_ ~typ:_ =
-        default_document_for "expr'_Ascription"
+      method expr'_Ascription ~super:_ ~e ~typ =
+        e#p ^^ string " : " ^^ typ#p
 
       method expr'_Assign ~super:_ ~lhs:_ ~e:_ ~witness:_ =
         default_document_for "expr'_Assign"
