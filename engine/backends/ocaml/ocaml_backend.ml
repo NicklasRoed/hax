@@ -191,7 +191,17 @@ struct
       method expr'_EffectAction ~super:_ ~action:_ ~argument:_ =
         default_document_for "expr'_EffectAction"
 
-      method expr'_GlobalVar_concrete ~super:_ x2 = x2#p
+      method expr'_GlobalVar_concrete ~super:_ x2 = 
+        let x = U.Reducers.collect_concrete_idents#visit_concrete_ident () x2#v in
+        let concrete_idents_list = Set.elements x in
+        let results = List.map 
+          ~f:(fun concrete_id -> (RenderId.render concrete_id).name) concrete_idents_list 
+        in
+        match results with
+        | [] -> empty  (* Handle empty list case *)
+        | [single_element] -> string ("SINGLE_IDENTIFIER: " ^ single_element)  (* Special case for single element *)
+        | multiple -> string ("MULTIPLE_IDENTIFIERS: " ^ String.concat ~sep:", " multiple)  (* Multiple elements case *)
+
 
       method expr'_GlobalVar_primitive ~super:_ x2 = 
         default_document_for "expr'_GlobalVar_primitive"
@@ -587,7 +597,7 @@ module TransformToInputLanguage =
   (* |> Side_effect_utils.Hoist *)
   |> Phases.Local_mutation
   |> Phases.Reject.Continue
-  |> Phases.Cf_into_monads
+  |> Phases.Cf_into_monads 
   |> Phases.Reject.EarlyExit
   |> Phases.Functionalize_loops
   |> Phases.Reject.As_pattern
