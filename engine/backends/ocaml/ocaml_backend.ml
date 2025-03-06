@@ -371,38 +371,30 @@ struct
 
       (*PLACEHOLDER IMPL TAKEN FROM COQ BACKEND*)
       method item'_Use ~super:_ ~path ~is_external ~rename:_ =
-        if List.length path == 0 || is_external then empty
+        if List.length path = 0 || is_external then empty
         else
-          let crate =
-            String.capitalize
-              (Option.value ~default:"(TODO CRATE)"
-                 (Option.bind ~f:List.hd current_namespace))
-          in
-          let concat_capitalize l =
-            String.concat ~sep:"_" (List.map ~f:String.capitalize l)
-          in
-          let concat_capitalize_include l =
-            concat_capitalize (List.drop_last_exn l)
-            ^ " (t_" ^ List.last_exn l ^ ")"
-          in
-          let path_string =
+          let module_name =
             match path with
-            | "crate" :: xs -> concat_capitalize_include (crate :: xs)
+            | "crate" :: xs -> 
+                String.capitalize (Option.value ~default:"Crate" 
+                  (Option.bind current_namespace ~f:List.hd)) ^
+                (if List.length xs > 0 then "." else "") ^
+                String.concat ~sep:"." (List.map ~f:String.capitalize xs)
             | "super" :: xs ->
-                concat_capitalize
-                  (crate
-                   :: List.drop_last_exn
-                        (Option.value ~default:[]
-                           (Option.bind ~f:List.tl current_namespace))
-                  @ xs)
-            | [ a ] -> a
-            | xs -> concat_capitalize_include xs
+                let parent_namespace = 
+                  Option.value ~default:[] 
+                    (Option.bind current_namespace ~f:List.tl)
+                in
+                String.concat ~sep:"." (List.map ~f:String.capitalize 
+                  ((List.drop_last_exn parent_namespace) @ xs))
+            | [ a ] -> 
+                String.capitalize a
+            | xs -> 
+                String.concat ~sep:"." (List.map ~f:String.capitalize xs)
           in
-          if String.is_empty path_string then empty
+          if String.is_empty module_name then empty
           else
-            string "From" ^^ space ^^ string crate ^^ space
-            ^^ string "Require Import" ^^ space ^^ string path_string ^^ dot
-            ^^ break 1 ^^ string "Export" ^^ space ^^ string path_string ^^ dot
+            string "open" ^^ space ^^ string module_name
 
       method item_quote_origin ~item_kind:_ ~item_ident:_ ~position:_ =
         default_document_for "item_quote_origin"
