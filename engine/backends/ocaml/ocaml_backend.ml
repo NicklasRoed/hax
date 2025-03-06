@@ -456,8 +456,8 @@ struct
 
       method pat ~p ~span:_ ~typ:_ = p#p
 
-      method pat'_PAscription ~super:_ ~typ:_ ~typ_span:_ ~pat:_ =
-        default_document_for "pat'_PAscription"
+      method pat'_PAscription ~super:_ ~typ ~typ_span:_ ~pat =
+        pat#p ^^ string " : " ^^ typ#p
 
       method pat'_PBinding ~super:_ ~mut:_ ~mode:_ ~var ~typ:_ ~subpat:_ =
         var#p
