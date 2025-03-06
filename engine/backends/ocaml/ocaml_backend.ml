@@ -159,8 +159,9 @@ struct
           ~is_struct:_ ~fields:_ ~base:_ =
         default_document_for "expr'_Construct_inductive"
 
-      method expr'_Construct_tuple ~super:_ ~components:_ =
-        default_document_for "expr'_Construct_tuple"
+      method expr'_Construct_tuple ~super:_ ~components =
+        if List.length components == 0 then !^"()"
+        else parens (separate_map comma (fun x -> x#p) components)
 
       method expr'_Continue ~super:_ ~acc:_ ~label:_ ~witness:_ =
         default_document_for "expr'_Continue"
