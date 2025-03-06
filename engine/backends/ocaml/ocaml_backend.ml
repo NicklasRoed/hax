@@ -155,9 +155,31 @@ struct
       method expr'_Closure ~super:_ ~params:_ ~body:_ ~captures:_ =
         default_document_for "expr'_Closure"
 
-      method expr'_Construct_inductive ~super:_ ~constructor:_ ~is_record:_
-          ~is_struct:_ ~fields:_ ~base:_ =
-        default_document_for "expr'_Construct_inductive"
+      method expr'_Construct_inductive ~super:_ ~constructor ~is_record ~is_struct ~fields ~base =
+        let fields_or_empty add_space =
+          if List.is_empty fields then empty
+          else
+            add_space
+            ^^ parens
+              (separate_map (comma ^^ space) (fun x -> (snd x)#p) fields)
+        in
+        if is_record && is_struct then
+        (* In OCaml, records use curly braces with field assignments *)
+          match base with
+            | Some x -> 
+              x#p ^^ space ^^ braces
+              (separate_map (semi ^^ space) 
+                  (fun (name, value) -> name#p ^^ space ^^ equals ^^ space ^^ value#p) 
+                  fields)
+            | None -> 
+              constructor#p ^^ space ^^ braces
+              (separate_map (semi ^^ space) 
+                  (fun (name, value) -> name#p ^^ space ^^ equals ^^ space ^^ value#p) 
+                  fields)
+        else if not is_record then
+          constructor#p ^^ fields_or_empty space
+        else
+          string "Something very unexpected happened."
 
       method expr'_Construct_tuple ~super:_ ~components =
         if List.length components == 0 then !^"()"
@@ -174,8 +196,11 @@ struct
       method expr'_GlobalVar_primitive ~super:_ x2 = 
         default_document_for "expr'_GlobalVar_primitive"
 
-      method expr'_If ~super:_ ~cond:_ ~then_:_ ~else_:_ =
-        default_document_for "expr'_If"
+      method expr'_If ~super:_ ~cond ~then_ ~else_ =
+        string "if" ^^ space ^^ cond#p ^^ space ^^ string "then"
+        ^^ nest 2 (break 1 ^^ then_#p)
+        ^^ break 1 ^^ string "else"
+        ^^ nest 2 (break 1 ^^ match else_ with Some x -> x#p | None -> string "()")
 
       method expr'_Let ~super:_ ~monadic:_ ~lhs ~rhs ~body =
         string "let " ^^ lhs#p ^^ string " = " ^^ rhs#p 
@@ -184,6 +209,7 @@ struct
       method expr'_Literal ~super:_ x2 = x2#p
       method expr'_LocalVar ~super:_ x2 = x2#p
 
+      (** Purely functional or just the for-loop equivalent? **)
       method expr'_Loop ~super:_ ~body:_ ~kind:_ ~state:_ ~control_flow:_
           ~label:_ ~witness:_ =
         default_document_for "expr'_Loop"
@@ -423,7 +449,7 @@ struct
       method loop_state ~init:_ ~bpat:_ ~witness:_ =
         default_document_for "loop_state"
 
-      method modul x1 = separate_map (string "\n") (fun x -> x#p) x1
+      method modul x1 = separate_map (break 1) (fun x -> x#p) x1
 
       method param ~pat ~typ ~typ_span:_ ~attrs:_ =
         string "~" ^^ pat#p ^^ string ": " ^^ typ#p
@@ -566,7 +592,7 @@ module TransformToInputLanguage =
   |> Phases.Drop_references
   |> Phases.Trivialize_assign_lhs
   |> Phases.Reconstruct_question_marks
-  |> Side_effect_utils.Hoist
+  (* |> Side_effect_utils.Hoist *)
   |> Phases.Local_mutation
   |> Phases.Reject.Continue
   |> Phases.Cf_into_monads
