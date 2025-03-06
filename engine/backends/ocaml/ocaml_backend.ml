@@ -523,7 +523,7 @@ struct
       method ty_TChar = string "char"
       method ty_TDyn ~witness:_ ~goals:_ = default_document_for "ty_TDyn"
       method ty_TFloat _x1 = string "float"
-      method ty_TInt x1 = default_document_for "ty_TInt" (*WAITING FOR GUIDANCE*)
+      method ty_TInt x1 = string "int" (*PLACEHOLDER -- WAITING FOR GUIDANCE*)
       method ty_TOpaque x1 = x1#p
       method ty_TParam x1 = x1#p
       method ty_TRawPointer ~witness:_ = default_document_for "ty_TRawPointer"
