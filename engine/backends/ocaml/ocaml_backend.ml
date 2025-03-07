@@ -111,7 +111,7 @@ struct
       method cf_kind_BreakOrReturn =
         default_document_for "cf_kind_BreakOrReturn"
 
-      method common_array _x1 = default_document_for "common_array"
+      method common_array x1 = brackets (string "|" ^^ (separate (semi ^^ space) x1) ^^ string "|")
 
       method dyn_trait_goal ~trait:_ ~non_self_args:_ =
         default_document_for "dyn_trait_goal"
@@ -381,7 +381,6 @@ struct
           ~arguments:_ =
         default_document_for "item'_Type_struct"
 
-      (*PLACEHOLDER IMPL TAKEN FROM COQ BACKEND*)
       method item'_Use ~super:_ ~path ~is_external ~rename:_ =
         if List.length path = 0 || is_external then empty
         else
