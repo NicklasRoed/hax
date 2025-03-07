@@ -83,6 +83,8 @@ struct
 
   let default_string_for s = "TODO: please implement the method `" ^ s ^ "`"
   let default_document_for = default_string_for >> string
+  let trim_string str =
+    String.sub str 2 (String.length str - 2)
 
   type ('get_span_data, 'a) object_type =
     ('get_span_data, 'a) BasePrinter.Gen.object_type
@@ -97,7 +99,7 @@ struct
       method arm' ~super:_ ~arm_pat ~body ~guard:_ =
         arm_pat#p ^^ space ^^ string "->" ^^ nest 2 (break 1 ^^ body#p)
 
-      method attrs _x1 = default_document_for "attrs"
+      method attrs x1 = default_document_for "attrs"
 
       method binding_mode_ByRef _x1 _x2 =
         default_document_for "binding_mode_ByRef"
@@ -174,12 +176,17 @@ struct
             | None -> 
               constructor#p ^^ space ^^ braces
               (separate_map (semi ^^ space) 
-                  (fun (name, value) -> name#p ^^ space ^^ equals ^^ space ^^ value#p) 
-                  fields)
+                  (fun (name, value) -> 
+                    let concrete_name = match name#v with
+                      | `Concrete cid -> string (trim_string (RenderId.render cid).name) ^^ space ^^ equals ^^ space ^^ value#p
+                      | _ -> string "fuck"
+                  in concrete_name
+                  ) fields)
         else if not is_record then
           constructor#p ^^ fields_or_empty space
         else
           string "Something very unexpected happened."
+
 
       method expr'_Construct_tuple ~super:_ ~components =
         if List.length components == 0 then !^"()"
@@ -377,9 +384,42 @@ struct
       method item'_Type_enum ~super:_ ~name:_ ~generics:_ ~variants:_ =
         default_document_for "item'_Type_enum"
 
-      method item'_Type_struct ~super:_ ~name:_ ~generics:_ ~tuple_struct:_
-          ~arguments:_ =
-        default_document_for "item'_Type_struct"
+      method item'_Type_struct ~super:_ ~name ~generics ~tuple_struct
+      ~arguments =
+        let types = List.map ~f:(
+          fun x ->
+            let snd_elem = match x with
+              | (_, s, _) -> s#p
+            in snd_elem) arguments
+          in
+          let trimmed_name_str = 
+            (trim_string (RenderId.render name#v).name)
+          in
+          let trimmed_var_name_str =
+            String.make 1 (Char.lowercase (String.get trimmed_name_str 0))
+            ^ String.sub trimmed_name_str 1 (String.length trimmed_name_str - 1)
+          in
+          let trimmed_name = string trimmed_name_str in
+          let trimmed_var_name = string trimmed_var_name_str in
+          match tuple_struct with
+          | true ->
+            string "type" ^^ space ^^ trimmed_var_name ^^ space ^^ equals ^^ space
+            ^^ trimmed_name ^^ space ^^ string "of" ^^ space ^^ separate (space ^^ star ^^ space) types
+          | false ->
+            let idents = List.map ~f:(
+              fun x -> 
+                let first_elem = match x with
+                  | (f, _, _) -> string (trim_string (RenderId.render f#v).name)
+                in first_elem) arguments
+            in
+            let field_definitions = 
+              match List.map2 ~f:(fun id typ -> nest 2 (break 1 ^^ id ^^ string ": " ^^ typ ^^ semi)) idents types with
+              | Ok result -> 
+                string "type" ^^ space ^^ trimmed_name ^^ space ^^ equals ^^ space ^^ lbrace ^^
+                concat result ^^ break 1 ^^ rbrace
+              | Unequal_lengths -> string "GG"
+            in 
+            field_definitions
 
       method item'_Use ~super:_ ~path ~is_external ~rename:_ =
         if List.length path = 0 || is_external then empty
