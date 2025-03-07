@@ -179,8 +179,8 @@ struct
                   (fun (name, value) -> 
                     let concrete_name = match name#v with
                       | `Concrete cid -> string (trim_string (RenderId.render cid).name) ^^ space ^^ equals ^^ space ^^ value#p
-                      | _ -> string "fuck"
-                  in concrete_name
+                      | _ -> string "Unexpected non-concrete identifier."
+                    in concrete_name
                   ) fields)
         else if not is_record then
           constructor#p ^^ fields_or_empty space
