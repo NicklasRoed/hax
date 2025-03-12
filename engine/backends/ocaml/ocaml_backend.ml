@@ -258,8 +258,8 @@ struct
       method generic_constraint_GCType _x1 =
         default_document_for "generic_constraint_GCType"
 
-      method generic_param ~ident:_ ~span:_ ~attrs:_ ~kind:_ =
-        default_document_for "generic_param"
+      method generic_param ~ident ~span:_ ~attrs:_ ~kind =
+        string "`" ^^ braces (ident#p ^^ space ^^ colon ^^ space ^^ kind#p)
 
       method generic_param_kind_GPConst ~typ:_ =
         default_document_for "generic_param_kind_GPConst"
@@ -268,7 +268,7 @@ struct
         default_document_for "generic_param_kind_GPLifetime"
 
       method generic_param_kind_GPType =
-        default_document_for "generic_param_kind_GPType"
+        string "Type"
 
       method generic_value_GConst _x1 =
         default_document_for "generic_value_GConst"
@@ -329,9 +329,27 @@ struct
       method item'_Alias ~super:_ ~name:_ ~item:_ =
         default_document_for "item'_Alias"
 
-      method item'_Enum_Variant ~name:_ ~arguments:_ ~is_record:_ ~attrs:_ =
-        default_document_for "item'_Enum_Variant"
-
+      method item'_Enum_Variant ~name ~arguments ~is_record ~attrs:_ =
+        if is_record then
+          let record_idents = List.map ~f:(fun x ->
+            match x with
+            | (fst, _, _) -> fst
+            ) arguments
+          in
+          let record_types = List.map ~f:(fun x ->
+            match x with
+            | (_, snd, _) -> snd
+            ) arguments
+          in
+          let rec_vars = 
+            match List.map2 ~f:(fun id typ -> id#p ^^ string ":" ^^ space ^^ typ#p) record_idents record_types with 
+            | Ok result -> 
+              name#p ^^ space ^^ string "of" ^^ space ^^ lbrace ^^ separate (semi ^^ space) result ^^ rbrace
+            | Unequal_lengths -> string "GGS"
+            in
+            rec_vars
+          else
+            default_document_for "THIS IS IT"
       method item'_Fn ~super ~name ~generics ~body ~params ~safety:_ =
         let is_rec =
           Set.mem
@@ -370,7 +388,7 @@ struct
         default_document_for "item'_Impl"
 
       method item'_NotImplementedYet =
-        string "failwith NotImplementedYet"
+        string "(* Not Implemented Yet *)"
 
       method item'_Quote ~super:_ ~quote:_ ~origin:_ =
         default_document_for "item'_Quote"
@@ -381,8 +399,15 @@ struct
       method item'_TyAlias ~super:_ ~name:_ ~generics:_ ~ty:_ =
         default_document_for "item'_TyAlias"
 
-      method item'_Type_enum ~super:_ ~name:_ ~generics:_ ~variants:_ =
-        default_document_for "item'_Type_enum"
+      method item'_Type_enum ~super:_ ~name ~generics ~variants =
+        let gen_len = List.length generics#v.params in
+        match gen_len with
+        | 0 ->
+          string "type" ^^ space ^^ name#p ^^ space ^^ lbrace ^^
+          nest 2 (break 1 ^^ string "|" ^^ space ^^ separate_map (break 1 ^^ string "|" ^^ space) (fun x -> x#p) variants) ^^
+          break 1 ^^ rbrace
+        | _ ->
+          string "hehe"
 
       method item'_Type_struct ~super:_ ~name ~generics ~tuple_struct
       ~arguments =

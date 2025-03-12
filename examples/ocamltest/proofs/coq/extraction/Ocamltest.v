@@ -15,10 +15,8 @@ Import RecordSetNotations.
 (* NotImplementedYet *)
 
 Definition main (_ : unit) : unit :=
-  let x1 := -9.31%float in
-  let x2 := f_ge (17) (2) in
-  let x3 := true in
-  let x4 := false in
-  let x5 := "c"%char in
-  let x6 := f_from ("Hello"%string) in
   tt.
+
+Definition haha (x : t_i32) : t_i32 :=
+  run (let hoist1 := ControlFlow_Break (x) in
+  ControlFlow_Continue (never_to_any (hoist1))).
