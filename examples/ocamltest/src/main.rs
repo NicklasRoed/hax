@@ -1,4 +1,8 @@
+enum Result {
+    Success,
+    Error,
+}
+
 fn main() {
-    // Literals 
-    2 + 2;
+
 }
