@@ -206,7 +206,7 @@ struct
         in
         match results with
         | [] -> empty  (* Handle empty list case *)
-        | [single_element] -> string ("SINGLE_IDENTIFIER: " ^ single_element)  (* Special case for single element *)
+        | [single_element] -> string (single_element)  (* Special case for single element *)
         | multiple -> string ("MULTIPLE_IDENTIFIERS: " ^ String.concat ~sep:", " multiple)  (* Multiple elements case *)
 
 
@@ -356,7 +356,7 @@ struct
         let keyword = string (if is_rec then "let rec" else "let") in
         let generics_doc = generics#p in
         keyword ^^ space ^^ name#p ^^ generics_doc ^^ space ^^ params_doc ^^
-        space ^^ colon ^^ space ^^ typ#p ^^ space ^^ equals ^^ 
+        space ^^ string "->" ^^ space ^^ typ#p ^^ space ^^ equals ^^ 
         nest 2 (break 1 ^^ body#p)
     
       method item'_HaxError ~super:_ _x2 = default_document_for "item'_HaxError"
@@ -549,7 +549,7 @@ struct
       method trait_item'_TIType _x1 = default_document_for "trait_item'_TIType"
 
       method ty_TApp_application ~typ ~generics =
-        typ#p ^^ concat_map (fun x -> space ^^ parens x#p) generics
+       typ#p ^^ concat_map (fun x -> space ^^ parens x#p) generics
 
       method ty_TApp_tuple ~types = 
         if List.length types == 0 then string "unit"
