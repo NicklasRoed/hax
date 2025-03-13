@@ -158,8 +158,11 @@ struct
       method expr'_Break ~super:_ ~e:_ ~acc:_ ~label:_ ~witness:_ =
         default_document_for "expr'_Break"
 
-      method expr'_Closure ~super:_ ~params:_ ~body:_ ~captures:_ =
-        default_document_for "expr'_Closure"
+      method expr'_Closure ~super:_ ~params ~body ~captures:_ =
+        parens (!^"fun"
+        ^^ concat_map (fun x -> space ^^ x#p) params
+        ^^ space ^^ !^"->" ^^ space
+        ^^ nest 2 (break 1 ^^ body#p)) (* Closures are weird *)
 
       method expr'_Construct_inductive ~super:_ ~constructor ~is_record ~is_struct ~fields ~base =
         let fields_or_empty =
@@ -210,7 +213,7 @@ struct
 
       method expr'_Construct_tuple ~super:_ ~components =
         if List.length components == 0 then !^"()"
-        else parens (separate_map comma (fun x -> x#p) components)
+        else parens (separate_map (comma ^^ space) (fun x -> x#p) components)
 
       method expr'_Continue ~super:_ ~acc:_ ~label:_ ~witness:_ =
         default_document_for "expr'_Continue"
@@ -295,8 +298,7 @@ struct
       method generic_param_kind_GPType =
         string "Type"
 
-      method generic_value_GConst _x1 =
-        default_document_for "generic_value_GConst"
+      method generic_value_GConst x1 = x1#p
 
       method generic_value_GLifetime ~lt:_ ~witness:_ =
         default_document_for "generic_value_GLifetime"
@@ -564,8 +566,8 @@ struct
           ~is_struct:_ ~fields:_ =
         default_document_for "pat'_PConstruct_inductive"
 
-      method pat'_PConstruct_tuple ~super:_ ~components:_ =
-        default_document_for "pat'_PConstruct_tuple"
+      method pat'_PConstruct_tuple ~super:_ ~components =
+        parens (separate_map (comma ^^ space) (fun x -> x#p) components)
 
       method pat'_PDeref ~super:_ ~subpat:_ ~witness:_ =
         default_document_for "pat'_PDeref"
@@ -626,7 +628,7 @@ struct
       method ty_TRef ~witness:_ ~region:_ ~typ:_ ~mut:_ =
         default_document_for "ty_TRef"
 
-      method ty_TSlice ~witness:_ ~ty:_ = default_document_for "ty_TSlice"
+      method ty_TSlice ~witness:_ ~ty = ty#p ^^ space ^^ string "array" (* PLACEHOLDER FOR ACTUAL SLICES (BORROW FEATURE?)*)
       method ty_TStr = string "string"
       (* END GENERATED *)
     end
