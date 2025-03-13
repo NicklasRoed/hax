@@ -123,7 +123,7 @@ struct
         default_document_for "dyn_trait_goal"
 
       method error_expr _x1 = default_document_for "error_expr"
-      method error_item _x1 = default_document_for "error_item"
+      method error_item x1 = string x1
       method error_pat _x1 = default_document_for "error_pat"
 
       method expr ~e ~span:_ ~typ:_ = e#p
@@ -230,8 +230,13 @@ struct
         | multiple -> string ("MULTIPLE_IDENTIFIERS: " ^ String.concat ~sep:", " multiple)  (* Multiple elements case *)
 
 
-      method expr'_GlobalVar_primitive ~super:_ x2 = 
-        default_document_for "expr'_GlobalVar_primitive"
+      method expr'_GlobalVar_primitive ~super:_ x2 = let dude = 
+        match x2 with 
+        | Deref -> default_document_for "TODO"
+        | Cast -> string ("Int64.to_Int32") (* TEMPORARY SOLUTION *)
+        | LogicalOp op -> default_document_for "LOGOP TODO"
+      in
+      dude
 
       method expr'_If ~super:_ ~cond ~then_ ~else_ =
         string "if" ^^ space ^^ cond#p ^^ space ^^ string "then"
@@ -296,8 +301,7 @@ struct
       method generic_value_GLifetime ~lt:_ ~witness:_ =
         default_document_for "generic_value_GLifetime"
 
-      method generic_value_GType _x1 =
-        default_document_for "generic_value_GType"
+      method generic_value_GType x1 = x1#p
 
       method generics ~params ~constraints =
         if List.is_empty params then empty
@@ -567,7 +571,7 @@ struct
         default_document_for "pat'_PDeref"
 
       method pat'_PWild = string "_"
-      method printer_name = default_string_for "printer_name"
+      method printer_name = default_string_for "OCaml printer"
 
       method projection_predicate ~impl:_ ~assoc_item:_ ~typ:_ =
         default_document_for "projection_predicate"
