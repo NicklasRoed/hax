@@ -122,9 +122,9 @@ struct
       method dyn_trait_goal ~trait:_ ~non_self_args:_ =
         default_document_for "dyn_trait_goal"
 
-      method error_expr _x1 = default_document_for "error_expr"
-      method error_item x1 = string x1
-      method error_pat _x1 = default_document_for "error_pat"
+      method error_expr x1 = parens (string x1 ^^ string "(* ERROR EXPR *)")
+      method error_item x1 = parens (string x1 ^^ string "(* ERROR ITEM *)")
+      method error_pat x1 = parens (string x1 ^^ string "(* ERROR PAT *)")
 
       method expr ~e ~span:_ ~typ:_ = e#p
 
@@ -134,13 +134,13 @@ struct
       method expr'_App_application ~super:_ ~f ~args ~generics:_ =
         f#p ^^ concat_map (fun x -> space ^^ x#p) args
 
-      method expr'_App_constant ~super:_ ~constant:_ ~generics:_ =
-        default_document_for "expr'_App_constant"
+      method expr'_App_constant ~super:_ ~constant ~generics:_ =
+        constant#p
 
-      method expr'_App_field_projection ~super:_ ~field:_ ~e:_ =
+      method expr'_App_field_projection ~super:_ ~field:_ ~e:_ = (* NOT YET SEEN *)
         default_document_for "expr'_App_field_projection"
 
-      method expr'_App_tuple_projection ~super:_ ~size:_ ~nth:_ ~e:_ =
+      method expr'_App_tuple_projection ~super:_ ~size:_ ~nth:_ ~e:_ = 
         default_document_for "expr'_App_tuple_projection"
 
       method expr'_Ascription ~super:_ ~e ~typ =
@@ -256,7 +256,7 @@ struct
 
       (** Purely functional or just the for-loop equivalent? **)
       method expr'_Loop ~super:_ ~body:_ ~kind:_ ~state:_ ~control_flow:_
-          ~label:_ ~witness:_ =
+          ~label:_ ~witness:_ = (* NOT YET SEEN *)
         default_document_for "expr'_Loop"
 
       method expr'_MacroInvokation ~super:_ ~macro:_ ~args:_ ~witness:_ =
@@ -275,22 +275,22 @@ struct
       method expr'_Return ~super:_ ~e:_ ~witness:_ =
         default_document_for "expr'_Return"
 
-      method field_pat ~field:_ ~pat:_ = default_document_for "field_pat"
+      method field_pat ~field:_ ~pat = pat#p (* NOT YET SEEN *)
 
       method generic_constraint_GCLifetime _x1 _x2 =
         default_document_for "generic_constraint_GCLifetime"
 
-      method generic_constraint_GCProjection _x1 =
+      method generic_constraint_GCProjection _x1 = (* NOT YET SEEN *)
         default_document_for "generic_constraint_GCProjection"
 
-      method generic_constraint_GCType _x1 =
+      method generic_constraint_GCType _x1 = (* NOT YET SEEN *)
         default_document_for "generic_constraint_GCType"
 
       method generic_param ~ident ~span:_ ~attrs:_ ~kind =
         string "`" ^^ braces (ident#p ^^ space ^^ colon ^^ space ^^ kind#p)
 
-      method generic_param_kind_GPConst ~typ:_ =
-        default_document_for "generic_param_kind_GPConst"
+      method generic_param_kind_GPConst ~typ = (* NOT YET SEEN *)
+        typ#p
 
       method generic_param_kind_GPLifetime ~witness:_ =
         default_document_for "generic_param_kind_GPLifetime"
@@ -315,7 +315,8 @@ struct
       method guard'_IfLet ~super:_ ~lhs:_ ~rhs:_ ~witness:_ =
         default_document_for "guard'_IfLet"
 
-      method impl_expr ~kind:_ ~goal:_ = default_document_for "impl_expr"
+      method impl_expr ~kind:_ ~goal = 
+        goal#p (* NOT YET SEEN *)
 
       method impl_expr_kind_Builtin _x1 =
         default_document_for "impl_expr_kind_Builtin"
@@ -338,21 +339,21 @@ struct
         default_document_for "impl_expr_kind_Projection"
 
       method impl_expr_kind_Self = default_document_for "impl_expr_kind_Self"
-      method impl_ident ~goal:_ ~name:_ = default_document_for "impl_ident"
+      method impl_ident ~goal ~name:_ = 
+        goal#p (* NOT YET SEEN *)
 
-      method impl_item ~ii_span:_ ~ii_generics:_ ~ii_v:_ ~ii_ident:_ ~ii_attrs:_
-          =
+      method impl_item ~ii_span:_ ~ii_generics:_ ~ii_v:_ ~ii_ident:_ ~ii_attrs:_ = (* NOT YET SEEN *)
         default_document_for "impl_item"
 
-      method impl_item'_IIFn ~body:_ ~params:_ =
+      method impl_item'_IIFn ~body:_ ~params:_ = (* NOT YET SEEN *)
         default_document_for "impl_item'_IIFn"
 
-      method impl_item'_IIType ~typ:_ ~parent_bounds:_ =
-        default_document_for "impl_item'_IIType"
+      method impl_item'_IIType ~typ ~parent_bounds:_ = (* NOT YET SEEN *)
+        typ#p
 
       method item ~v ~span:_ ~ident:_ ~attrs:_ = v#p ^^ break 1
 
-      method item'_Alias ~super:_ ~name:_ ~item:_ =
+      method item'_Alias ~super:_ ~name:_ ~item:_ = (* NOT YET SEEN *)
         default_document_for "item'_Alias"
 
       method item'_Enum_Variant ~name ~arguments ~is_record ~attrs:_ =
@@ -414,7 +415,7 @@ struct
         default_document_for "item'_IMacroInvokation"
 
       method item'_Impl ~super:_ ~generics:_ ~self_ty:_ ~of_trait:_ ~items:_
-          ~parent_bounds:_ ~safety:_ =
+          ~parent_bounds:_ ~safety:_ = (* NOT YET IMPLEMENTED *)
         default_document_for "item'_Impl"
 
       method item'_NotImplementedYet =
@@ -423,10 +424,10 @@ struct
       method item'_Quote ~super:_ ~quote:_ ~origin:_ =
         default_document_for "item'_Quote"
 
-      method item'_Trait ~super:_ ~name:_ ~generics:_ ~items:_ ~safety:_ =
+      method item'_Trait ~super:_ ~name:_ ~generics:_ ~items:_ ~safety:_ = (* NOT YET SEEN *)
         default_document_for "item'_Trait"
 
-      method item'_TyAlias ~super:_ ~name:_ ~generics:_ ~ty:_ =
+      method item'_TyAlias ~super:_ ~name:_ ~generics:_ ~ty:_ = (* NOT YET SEEN *)
         default_document_for "item'_TyAlias"
 
       method item'_Type_enum ~super:_ ~name ~generics ~variants =
@@ -534,16 +535,16 @@ struct
           ~witness:_ =
         default_document_for "loop_kind_ForIndexLoop"
 
-      method loop_kind_ForLoop ~pat:_ ~it:_ ~witness:_ =
+      method loop_kind_ForLoop ~pat:_ ~it:_ ~witness:_ = (* NOT YET SEEN *)
         default_document_for "loop_kind_ForLoop"
 
-      method loop_kind_UnconditionalLoop =
+      method loop_kind_UnconditionalLoop = 
         default_document_for "loop_kind_UnconditionalLoop"
 
       method loop_kind_WhileLoop ~condition:_ ~witness:_ =
         default_document_for "loop_kind_WhileLoop"
 
-      method loop_state ~init:_ ~bpat:_ ~witness:_ =
+      method loop_state ~init:_ ~bpat:_ ~witness:_ = (* NOT YET SEEN *)
         default_document_for "loop_state"
 
       method modul x1 = separate_map (break 1) (fun x -> x#p) x1
@@ -563,7 +564,7 @@ struct
         lit#p
 
       method pat'_PConstruct_inductive ~super:_ ~constructor:_ ~is_record:_
-          ~is_struct:_ ~fields:_ =
+          ~is_struct:_ ~fields:_ = (* NOT YET IMPLEMENTED *)
         default_document_for "pat'_PConstruct_inductive"
 
       method pat'_PConstruct_tuple ~super:_ ~components =
@@ -575,7 +576,7 @@ struct
       method pat'_PWild = string "_"
       method printer_name = default_string_for "OCaml printer"
 
-      method projection_predicate ~impl:_ ~assoc_item:_ ~typ:_ =
+      method projection_predicate ~impl:_ ~assoc_item:_ ~typ:_ = (* NOT YET SEEN *)
         default_document_for "projection_predicate"
 
       method safety_kind_Safe = default_document_for "safety_kind_Safe"
@@ -590,17 +591,21 @@ struct
       method supported_monads_MResult _x1 =
         default_document_for "supported_monads_MResult"
 
-      method trait_goal ~trait:_ ~args:_ = default_document_for "trait_goal"
+      method trait_goal ~trait:_ ~args:_ = (* NOT YET SEEN *)
+        default_document_for "trait_goal"
 
       method trait_item ~ti_span:_ ~ti_generics:_ ~ti_v:_ ~ti_ident:_
-          ~ti_attrs:_ =
+          ~ti_attrs:_ = (* NOT YET SEEN *)
         default_document_for "trait_item"
 
-      method trait_item'_TIDefault ~params:_ ~body:_ ~witness:_ =
+      method trait_item'_TIDefault ~params:_ ~body:_ ~witness:_ = (* NOT YET SEEN *)
         default_document_for "trait_item'_TIDefault"
 
-      method trait_item'_TIFn _x1 = default_document_for "trait_item'_TIFn"
-      method trait_item'_TIType _x1 = default_document_for "trait_item'_TIType"
+      method trait_item'_TIFn _x1 = (* NOT YET SEEN *)
+        default_document_for "trait_item'_TIFn"
+
+      method trait_item'_TIType _x1 = (* NOT YET SEEN *)
+        default_document_for "trait_item'_TIType"
 
       method ty_TApp_application ~typ ~generics =
        typ#p ^^ concat_map (fun x -> space ^^ parens x#p) generics
@@ -613,8 +618,8 @@ struct
       method ty_TArrow x1 x2 = 
         concat_map (fun x -> x#p ^^ space ^^ string "->" ^^ space) x1 ^^ x2#p
 
-      method ty_TAssociatedType ~impl:_ ~item:_ =
-        default_document_for "ty_TAssociatedType"
+      method ty_TAssociatedType ~impl:_ ~item = (* NOT YET SEEN *)
+        item#p
 
       method ty_TBool = string "bool"
       method ty_TChar = string "char"
