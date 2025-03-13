@@ -526,8 +526,34 @@ struct
       method literal_Float ~value ~negative ~kind:_ =
         (if negative then !^"-" else empty) ^^ string value
 
-      method literal_Int ~value ~negative ~kind:_ =
-        (if negative then !^"-" else empty) ^^ string value
+      method literal_Int ~value ~negative ~kind =
+        match kind with
+        | { size; signedness } ->
+          let arch_size = size == SSize in
+          let size_doc = match size with
+            | S8 -> string "8"
+            | S16 -> string "16"
+            | S32 -> string "32"
+            | S64 -> string "64"
+            | S128 -> string "128"
+            | SSize -> empty
+          in
+          let sign_doc = match signedness with
+            | Unsigned -> 
+              if arch_size then
+                empty
+              else string "Uint"
+            | Signed -> 
+              if arch_size then
+                (if negative then !^"-" else empty)
+              else string "Int"
+          in
+          let suffix_doc =
+            if arch_size then
+              empty
+            else string ".of_int" ^^ space
+          in
+        sign_doc ^^ size_doc ^^ suffix_doc ^^ string value
 
       method literal_String x1 = string "\"" ^^ string x1 ^^ string "\""
 
@@ -625,7 +651,25 @@ struct
       method ty_TChar = string "char"
       method ty_TDyn ~witness:_ ~goals:_ = default_document_for "ty_TDyn"
       method ty_TFloat _x1 = string "float"
-      method ty_TInt x1 = string "int" (*PLACEHOLDER -- WAITING FOR GUIDANCE*)
+      method ty_TInt x1 = 
+        match x1 with
+        | { size; signedness } -> 
+          if size == SSize then
+            string "int"
+          else   
+            (
+              (match signedness with
+              | Unsigned -> string "Uint"
+              | Signed -> string "Int")
+              ^^
+              match size with
+              | S8 -> string "8"
+              | S16 -> string "16"
+              | S32 -> string "32"
+              | S64 -> string "64"
+              | S128 -> string "128"
+              | _ -> empty)
+          ^^ string ".t"
       method ty_TOpaque x1 = x1#p
       method ty_TParam x1 = x1#p
       method ty_TRawPointer ~witness:_ = default_document_for "ty_TRawPointer"
