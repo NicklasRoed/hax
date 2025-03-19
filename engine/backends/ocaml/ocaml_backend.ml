@@ -88,7 +88,11 @@ struct
   let default_string_for s = "TODO: please implement the method `" ^ s ^ "`"
   let default_document_for = default_string_for >> string
   let trim_string str =
-    String.sub str 2 (String.length str - 2)
+    if String.length str >= 2 then
+      match String.sub str 0 2 with
+      | "f_" | "v_" -> String.sub str 2 (String.length str - 2)
+      | _ -> str
+    else str
 
   type ('get_span_data, 'a) object_type =
     ('get_span_data, 'a) BasePrinter.Gen.object_type
@@ -137,8 +141,9 @@ struct
       method expr'_App_constant ~super:_ ~constant ~generics:_ =
         constant#p
 
-      method expr'_App_field_projection ~super:_ ~field:_ ~e:_ = (* NOT YET SEEN *)
-        default_document_for "expr'_App_field_projection"
+      method expr'_App_field_projection ~super:_ ~field ~e =
+       let rendered = RenderId.render field#v in
+        string "v_" ^^ e#p ^^ string "." ^^ string rendered.name
 
       method expr'_App_tuple_projection ~super:_ ~size:_ ~nth:_ ~e:_ = 
         default_document_for "expr'_App_tuple_projection"
@@ -184,7 +189,7 @@ struct
               (separate_map (semi ^^ space) 
                   (fun (name, value) -> 
                     let concrete_name = match name#v with
-                      | `Concrete cid -> string (trim_string (RenderId.render cid).name) ^^ space ^^ equals ^^ space ^^ value#p
+                      | `Concrete cid -> string (RenderId.render cid).name ^^ space ^^ equals ^^ space ^^ value#p
                       | _ -> string "Unexpected non-concrete identifier."
                     in concrete_name
                   ) fields)
@@ -381,6 +386,7 @@ struct
               name#p
             else 
               name#p ^^ space ^^ string "of" ^^ space ^^ separate_map (space ^^ star ^^ space) (fun x -> x#p) record_types
+
       method item'_Fn ~super ~name ~generics ~body ~params ~safety:_ =
         let is_rec =
           Set.mem
@@ -414,9 +420,50 @@ struct
           ~witness:_ =
         default_document_for "item'_IMacroInvokation"
 
-      method item'_Impl ~super:_ ~generics:_ ~self_ty:_ ~of_trait:_ ~items:_
-          ~parent_bounds:_ ~safety:_ =
-        default_document_for "item'_Impl"
+      method item'_Impl ~super:_ ~generics ~self_ty ~of_trait ~items ~parent_bounds:_ ~safety:_ =
+        let trait_tuple = of_trait#v in
+        let trait_name = fst trait_tuple in
+        let trait_args = snd trait_tuple in
+          let impl_name = match self_ty#v with
+            | TApp { ident; _ } -> 
+                let type_name = match ident with
+                  | `Concrete id -> (RenderId.render id).name
+                  | _ -> "UnknownType"
+                in
+                string (type_name ^ "_" ^ (RenderId.render trait_name#v).name)
+            | _ -> string ("Impl_" ^ (RenderId.render trait_name#v).name)
+          in
+          let trait_module_type = string (RenderId.render trait_name#v).name in
+          let _, params, _ = generics#v in
+          let header = string "module" ^^ space ^^ impl_name ^^ space ^^ 
+                       colon ^^ space ^^ trait_module_type ^^ 
+                       string " with type v_Self =" ^^ space ^^ self_ty#p ^^ 
+                       space ^^ equals ^^ space ^^ string "struct" in
+          let type_decl = string "type v_Self =" ^^ space ^^ self_ty#p in
+          let impl_items = List.filter_map ~f:(fun item ->
+            match item#v with
+            | { ii_v = IIFn { body; params }; ii_ident; _ } ->
+              let expr = 
+                self#_do_not_override_lazy_of_expr 
+                AstPos_expr'_App_f body 
+              in
+              Some (string "let" ^^ space ^^ string (RenderId.render ii_ident).name ^^ space ^^ 
+                      string "v_self" ^^ space ^^ equals ^^ space ^^ expr#p)
+            | { ii_v = IIType { typ; _ }; ii_ident; _ } ->
+              let ty = self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body typ in
+              Some (string "type" ^^ space ^^ string (RenderId.render ii_ident).name ^^ space ^^ 
+                    equals ^^ space ^^ ty#p)
+                      
+            | _ -> None
+          ) items in
+          let end_decl = string "end" in
+          group (
+            header ^^ nest 2 (break 1 ^^
+            type_decl ^^ break 1 ^^
+            separate (break 1) impl_items) ^^ break 1 ^^
+            end_decl
+          )
+
 
       method item'_NotImplementedYet =
         string "(* Not Implemented Yet *)"
@@ -474,7 +521,7 @@ struct
             in snd_elem) arguments
           in
           let trimmed_name_str = 
-            (trim_string (RenderId.render name#v).name)
+            (RenderId.render name#v).name
           in
           let trimmed_var_name_str =
             String.make 1 (Char.lowercase (String.get trimmed_name_str 0))
@@ -490,7 +537,7 @@ struct
             let idents = List.map ~f:(
               fun x -> 
                 let first_elem = match x with
-                  | (f, _, _) -> string (trim_string (RenderId.render f#v).name)
+                  | (f, _, _) ->  string ((RenderId.render f#v).name)
                 in first_elem) arguments
             in
             let field_definitions = 
