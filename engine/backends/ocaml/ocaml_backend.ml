@@ -415,7 +415,7 @@ struct
         default_document_for "item'_IMacroInvokation"
 
       method item'_Impl ~super:_ ~generics:_ ~self_ty:_ ~of_trait:_ ~items:_
-          ~parent_bounds:_ ~safety:_ = (* NOT YET IMPLEMENTED *)
+          ~parent_bounds:_ ~safety:_ =
         default_document_for "item'_Impl"
 
       method item'_NotImplementedYet =
@@ -424,8 +424,34 @@ struct
       method item'_Quote ~super:_ ~quote:_ ~origin:_ =
         default_document_for "item'_Quote"
 
-      method item'_Trait ~super:_ ~name:_ ~generics:_ ~items:_ ~safety:_ = (* NOT YET SEEN *)
-        default_document_for "item'_Trait"
+        method item'_Trait ~super:_ ~name ~generics ~items ~safety:_ = 
+          let _, params, constraints = generics#v in
+          let header = string "module type" ^^ space ^^ name#p ^^ space ^^ equals ^^ space ^^ string "sig" in
+          let generic_types = List.filter_map ~f:(fun param ->
+            match param#v with
+            | { kind = GPType; ident; _ } ->
+                Some (string "type" ^^ space ^^ self#local_ident ident)
+            | _ -> None
+          ) params in
+          let trait_items = List.filter_map ~f:(fun item ->
+            match item#v with
+            | { ti_v = TIType _; ti_ident; _ } ->
+                Some (string "type" ^^ space ^^ string (RenderId.render ti_ident).name)
+            | { ti_v = TIFn typ; ti_ident; _ } ->
+                let ty = self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body typ in
+                Some (string "val" ^^ space ^^ string (RenderId.render ti_ident).name ^^ space ^^ 
+                        colon ^^ space ^^ ty#p)
+            | { ti_v = TIDefault { body; _ }; ti_ident; _ } ->
+                let ty = self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body body.typ in
+                Some (string "val" ^^ space ^^ string (RenderId.render ti_ident).name ^^ space ^^ 
+                        colon ^^ space ^^ ty#p)
+            | _ -> None
+          ) items in
+          let all_declarations = generic_types @ trait_items in
+          let end_decl = string "end" in
+          header ^^ nest 2 (break 1 ^^
+          separate (break 1) all_declarations) ^^ break 1 ^^
+          end_decl
 
       method item'_TyAlias ~super:_ ~name:_ ~generics:_ ~ty:_ = (* NOT YET SEEN *)
         default_document_for "item'_TyAlias"
@@ -741,7 +767,7 @@ module TransformToInputLanguage =
   |> Phases.Trivialize_assign_lhs
   |> Phases.Reconstruct_question_marks
   (* |> Side_effect_utils.Hoist *)
-  |> Phases.Local_mutation
+  |> Phases.Local_mutation (**)
   |> Phases.Reject.Continue
   |> Phases.Cf_into_monads 
   |> Phases.Reject.EarlyExit
@@ -749,7 +775,7 @@ module TransformToInputLanguage =
   |> Phases.Reject.As_pattern
   |> Phases.Reject.Dyn
   |> Phases.Reject.Trait_item_default
-  |> Phases.Bundle_cycles
+  |> Phases.Bundle_cycles (**)
   |> Phases.Sort_items
   |> SubtypeToInputLanguage
   |> Identity
