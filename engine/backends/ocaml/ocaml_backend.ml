@@ -390,62 +390,64 @@ struct
       method item'_Fn ~super ~name ~generics ~body ~params ~safety:_ =
         let is_rec =
           Set.mem
-              (U.Reducers.collect_concrete_idents#visit_expr () body#v)
-              name#v
-          in
-          let typ =
-            self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body body#v.typ
-          in
-          let has_params = not (List.is_empty (List.filter 
-            ~f:(fun x -> 
-                match x#v.pat.p with
-                  | PWild -> false
-                  | _ -> true) 
+            (U.Reducers.collect_concrete_idents#visit_expr () body#v)
+            name#v
+        in
+        let typ =
+          self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body body#v.typ
+        in
+        let has_params = not (List.is_empty (List.filter 
+          ~f:(fun x -> 
+              match x#v.pat.p with
+                | PWild -> false
+                | _ -> true) 
               params)
-          ) in                
-          let params_doc = if has_params 
-            then separate_map space (fun p -> p#p) params
-            else parens empty 
-          in                
-          let keyword = string (if is_rec then "let rec" else "let") in
-          let _, generic_params, constraints = generics#v in  
-          let trait_bounds = List.filter_map ~f:(fun constraint_item ->
-            match constraint_item#v with
-              | GCType impl_ident ->
-                let trait_name = (RenderId.render impl_ident.goal.trait).name in
-                if String.equal trait_name "t_Sized" then
-                  None
-                else
-                  let param_name = impl_ident.name in
-                  Some (param_name, trait_name)
+        ) in
+        let params_doc = if has_params 
+          then separate_map space (fun p -> p#p) params
+          else parens empty 
+        in
+        let keyword = string (if is_rec then "let rec" else "let") in
+        let _, generic_params, constraints = generics#v in
+        let type_var = 
+          List.find_map ~f:(fun param ->
+            match param#v with
+              | { kind = GPType; ident; _ } -> Some (self#local_ident ident)
               | _ -> None
-          ) constraints in
-          let trait_module_params = List.map ~f:(fun (param_name, trait_name) ->
-            string "(module " ^^ string trait_name ^^ 
-            string " : " ^^ string trait_name ^^ 
-            string " with type v_Self = " ^^ string param_name ^^ string ")"
-          ) trait_bounds in                
-          let type_params_section = 
-            if List.length generic_params > 0 then
-              string "(type " ^^ 
-              separate_map (string ") (type ") 
-                (fun param ->
-                  match param#v with
-                    | { kind = GPType; ident; _ } -> self#local_ident ident
-                    | _ -> string "a"
-                ) 
-                generic_params ^^ string ")"
-            else empty in
-          let generics_doc = 
-            if List.length trait_bounds > 0 then
-              space ^^ type_params_section ^^ space ^^ 
-              separate_map space (fun x -> x) trait_module_params
-            else 
-              generics#p 
-          in
-          keyword ^^ space ^^ name#p ^^ generics_doc ^^ space ^^ params_doc ^^
-          space ^^ string ":" ^^ space ^^ typ#p ^^ space ^^ equals ^^ 
-          nest 2 (break 1 ^^ body#p)
+            ) generic_params
+        in
+        let trait_bounds = List.filter_map ~f:(fun constraint_item ->
+          match constraint_item#v with
+            | GCType impl_ident ->
+              let trait_name = (RenderId.render impl_ident.goal.trait).name in
+              if String.equal trait_name "t_Sized" then
+                None
+              else
+                Some trait_name
+            | _ -> None
+        ) constraints in                
+        let trait_module_params = match type_var with
+          | Some tv -> List.map ~f:(fun trait_name ->
+              string "(module " ^^ string trait_name ^^ 
+              string " : " ^^ string trait_name ^^ 
+              string " with type v_Self = " ^^ tv ^^ string ")"
+            ) trait_bounds
+          | None -> []
+        in
+        let type_params_section = match type_var with
+          | Some tv -> string "(type " ^^ tv ^^ string ")"
+          | None -> empty
+        in
+        let generics_doc = 
+          if List.length trait_bounds > 0 then
+            space ^^ type_params_section ^^ space ^^ 
+            separate_map space (fun x -> x) trait_module_params
+          else 
+            generics#p 
+        in
+        keyword ^^ space ^^ name#p ^^ generics_doc ^^ space ^^ params_doc ^^
+        space ^^ string ":" ^^ space ^^ typ#p ^^ space ^^ equals ^^ 
+        nest 2 (break 1 ^^ body#p)
     
       method item'_HaxError ~super:_ _x2 = default_document_for "item'_HaxError"
 
@@ -536,14 +538,30 @@ struct
       method item'_TyAlias ~super:_ ~name:_ ~generics:_ ~ty:_ = (* NOT YET SEEN *)
         default_document_for "item'_TyAlias"
 
-      method item'_Type_enum ~super:_ ~name ~generics ~variants =
-        let gen_len = List.length generics#v.params in
-        match gen_len with
-        | 0 ->
-          string "type" ^^ space ^^ name#p ^^ space ^^ equals ^^
-          nest 2 (break 1 ^^ string "|" ^^ space ^^ separate_map (break 1 ^^ string "|" ^^ space) (fun x -> x#p) variants)
-        | _ ->
-          string "hehe"
+        method item'_Type_enum ~super:_ ~name ~generics ~variants =
+          (* Access the params from generics correctly *)
+          let params = generics#v.params in
+          
+          (* Generate type parameters string *)
+          let type_params = 
+            if List.length params > 0 then
+              space ^^ 
+              separate_map space
+                (fun param ->
+                  match param.kind with
+                  | GPType -> string "'" ^^ self#local_ident param.ident
+                  | GPLifetime _ -> string "'" ^^ self#local_ident param.ident
+                  | GPConst _ -> string "'_" (* Placeholder for const generics *)
+                )
+                params
+            else
+              empty
+          in
+          
+          (* Type definition with variants *)
+          string "type" ^^ type_params ^^ space ^^ name#p ^^ space ^^ equals ^^
+          nest 2 (break 1 ^^ string "|" ^^ space ^^ 
+                  separate_map (break 1 ^^ string "|" ^^ space) (fun x -> x#p) variants)
 
       method item'_Type_struct ~super:_ ~name ~generics ~tuple_struct
       ~arguments =
