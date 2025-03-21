@@ -538,30 +538,25 @@ struct
       method item'_TyAlias ~super:_ ~name:_ ~generics:_ ~ty:_ = (* NOT YET SEEN *)
         default_document_for "item'_TyAlias"
 
-        method item'_Type_enum ~super:_ ~name ~generics ~variants =
-          (* Access the params from generics correctly *)
-          let params = generics#v.params in
-          
-          (* Generate type parameters string *)
-          let type_params = 
-            if List.length params > 0 then
-              space ^^ 
-              separate_map space
-                (fun param ->
-                  match param.kind with
+      method item'_Type_enum ~super:_ ~name ~generics ~variants =
+        let params = generics#v.params in
+        let type_params = 
+          if List.length params > 0 then
+            space ^^ 
+            separate_map space
+              (fun param ->
+                match param.kind with
                   | GPType -> string "'" ^^ self#local_ident param.ident
                   | GPLifetime _ -> string "'" ^^ self#local_ident param.ident
-                  | GPConst _ -> string "'_" (* Placeholder for const generics *)
-                )
-                params
-            else
-              empty
-          in
-          
-          (* Type definition with variants *)
-          string "type" ^^ type_params ^^ space ^^ name#p ^^ space ^^ equals ^^
-          nest 2 (break 1 ^^ string "|" ^^ space ^^ 
-                  separate_map (break 1 ^^ string "|" ^^ space) (fun x -> x#p) variants)
+                  | GPConst _ -> string "'_"
+              )
+              params
+          else
+            empty
+        in
+        string "type" ^^ type_params ^^ space ^^ name#p ^^ space ^^ equals ^^
+        nest 2 (break 1 ^^ string "|" ^^ space ^^ 
+                separate_map (break 1 ^^ string "|" ^^ space) (fun x -> x#p) variants)
 
       method item'_Type_struct ~super:_ ~name ~generics ~tuple_struct
       ~arguments =
@@ -713,9 +708,25 @@ struct
       method pat'_PConstant ~super:_ ~lit =
         lit#p
 
-      method pat'_PConstruct_inductive ~super:_ ~constructor:_ ~is_record:_
-          ~is_struct:_ ~fields:_ = (* NOT YET IMPLEMENTED *)
-        default_document_for "pat'_PConstruct_inductive"
+      method pat'_PConstruct_inductive ~super ~constructor ~is_record 
+          ~is_struct ~fields =
+        let constructor_doc = constructor#p in          
+        if List.length fields = 0 then
+          constructor_doc
+        else if is_record then
+          constructor_doc ^^ space ^^ 
+          string "{" ^^ 
+          separate_map (string ";" ^^ space) 
+            (fun (field, pat) -> field#p ^^ space ^^ equals ^^ space ^^ pat#p)
+            fields ^^ 
+          string "}"
+        else
+          constructor_doc ^^ space ^^ 
+          string "(" ^^ 
+          separate_map (string "," ^^ space) 
+            (fun (_, pat) -> pat#p)
+            fields ^^ 
+          string ")"
 
       method pat'_PConstruct_tuple ~super:_ ~components =
         parens (separate_map (comma ^^ space) (fun x -> x#p) components)
@@ -873,7 +884,7 @@ module TransformToInputLanguage =
   |> Phases.Reject.As_pattern
   |> Phases.Reject.Dyn
   |> Phases.Reject.Trait_item_default
-  |> Phases.Bundle_cycles (**)
+  (*|> Phases.Bundle_cycles *) (**)
   |> Phases.Sort_items
   |> SubtypeToInputLanguage
   |> Identity
