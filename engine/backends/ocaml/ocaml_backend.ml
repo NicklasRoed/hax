@@ -414,7 +414,7 @@ struct
             match param#v with
               | { kind = GPType; ident; _ } -> Some (self#local_ident ident)
               | _ -> None
-            ) generic_params
+            ) generic_params (* TODO: Works for one generic parameter, but not multiple. *)
         in
         let trait_bounds = List.filter_map ~f:(fun constraint_item ->
           match constraint_item#v with
