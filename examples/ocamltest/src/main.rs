@@ -1,7 +1,7 @@
 fn main() {
-    let x : i32 = 2 + 2;
-}
-
-fn add(x : i32, y : i32) -> i32 {
-    return x + y;
+    let mut sum = 0;
+    
+    for i in 1..=10 {
+        sum += i;
+    }
 }

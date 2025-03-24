@@ -140,13 +140,19 @@ struct
 
       method expr'_App_constant ~super:_ ~constant ~generics:_ =
         constant#p
-
+      
       method expr'_App_field_projection ~super:_ ~field ~e =
        let rendered = RenderId.render field#v in
         string "v_" ^^ e#p ^^ string "." ^^ string rendered.name
-
-      method expr'_App_tuple_projection ~super:_ ~size:_ ~nth:_ ~e:_ = 
-        default_document_for "expr'_App_tuple_projection"
+      
+      (* TODO: Implement for cases where nth > 2. *)
+      method expr'_App_tuple_projection ~super ~size ~nth ~e = 
+        let prefix_doc =
+          match nth with
+          | 0 -> string "fst"
+          | 1 -> string "snd"
+          | _ -> string "Unsupported for tuples of size > 2."
+        in prefix_doc ^^ space ^^ e#p
 
       method expr'_Ascription ~super:_ ~e ~typ =
         e#p ^^ string " : " ^^ typ#p
@@ -348,8 +354,8 @@ struct
         default_document_for "impl_expr_kind_Projection"
 
       method impl_expr_kind_Self = default_document_for "impl_expr_kind_Self"
-      method impl_ident ~goal ~name:_ = 
-        goal#p (* NOT YET SEEN *)
+      method impl_ident ~goal ~name = 
+        parens (string name) ^^ space ^^ colon ^^ space ^^ goal#p
 
       method impl_item ~ii_span:_ ~ii_generics:_ ~ii_v:_ ~ii_ident:_ ~ii_attrs:_ = (* NOT YET SEEN *)
         default_document_for "impl_item"
@@ -475,7 +481,7 @@ struct
         default_document_for "item'_Quote"
 
         method item'_Trait ~super:_ ~name ~generics ~items ~safety:_ = 
-          let _, params, constraints = generics#v in
+          (* let _, params, constraints = generics#v in
           let header = string "module type" ^^ space ^^ name#p ^^ space ^^ equals ^^ space ^^ string "sig" in
           let generic_types = List.filter_map ~f:(fun param ->
             match param#v with
@@ -501,7 +507,8 @@ struct
           let end_decl = string "end" in
           header ^^ nest 2 (break 1 ^^
           separate (break 1) all_declarations) ^^ break 1 ^^
-          end_decl
+          end_decl *)
+          separate_map (break 1) (fun x -> x#p) items
 
       method item'_TyAlias ~super:_ ~name:_ ~generics:_ ~ty:_ = (* NOT YET SEEN *)
         default_document_for "item'_TyAlias"
@@ -722,21 +729,32 @@ struct
       
       (* TODO: If more than one arg occurs, then this might not be correct. But will it ever happen? *)
       method trait_goal ~trait ~args =
-        trait#p ^^ space ^^ string "with" ^^ space ^^ string "type" ^^ space ^^ 
-        string "v_Self" ^^ space ^^ equals ^^ space ^^ separate_map space (fun x -> x#p) args
+        separate_map space (fun x -> string "'" ^^ x#p) args ^^ space ^^ trait#p
 
-      method trait_item ~ti_span:_ ~ti_generics:_ ~ti_v:_ ~ti_ident:_
-          ~ti_attrs:_ = (* NOT YET SEEN *)
-        default_document_for "trait_item"
+      (* TODO: Finish this and fix also, such that coverage works. *)
+      method trait_item ~ti_span ~ti_generics ~ti_v ~ti_ident
+          ~ti_attrs = 
+        let item_type_doc =
+          match ti_v#v with
+          | TIFn _ ->
+            string "val" ^^ space ^^ ti_ident#p ^^ space ^^ colon ^^ space ^^ ti_v#p
+          | TIType x1 ->
+            match x1 with
+            | [] -> 
+              string "type" ^^ space ^^ ti_ident#p
+            | h :: _ ->
+              string "type" ^^ space ^^ ti_ident#p ^^ space ^^ colon ^^ space ^^ ti_v#p
+          | _ -> string "lol"
+        in item_type_doc
 
       method trait_item'_TIDefault ~params:_ ~body:_ ~witness:_ = (* NOT YET SEEN *)
         default_document_for "trait_item'_TIDefault"
 
-      method trait_item'_TIFn _x1 = (* NOT YET SEEN *)
-        default_document_for "trait_item'_TIFn"
+      method trait_item'_TIFn x1 = 
+        x1#p
 
-      method trait_item'_TIType _x1 = (* NOT YET SEEN *)
-        default_document_for "trait_item'_TIType"
+      method trait_item'_TIType x1 = (* NOT YET SEEN *)
+        separate_map space (fun x -> x#p) x1
 
       method ty_TApp_application ~typ ~generics =
        typ#p ^^ concat_map (fun x -> space ^^ parens x#p) generics

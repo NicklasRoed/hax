@@ -7,14 +7,7 @@ Open Scope bool_scope.
 Require Import Ascii.
 Require Import String.
 Require Import Coq.Floats.Floats.
-From RecordUpdate Require Import RecordSet.
-Import RecordSetNotations.
-
-
+(* From RecordUpdate Require Import RecordSet.
+Import RecordSetNotations. *)
 
 (* NotImplementedYet *)
-
-Definition main (_ : unit) : (t_i32*unit) :=
-  let sum := 0 in
-  (f_fold (f_into_iter (impl_7__new (1) (10))) (sum) (fun sum i =>
-    f_add (sum) (i)),tt).
