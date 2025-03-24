@@ -354,8 +354,9 @@ struct
         default_document_for "impl_expr_kind_Projection"
 
       method impl_expr_kind_Self = default_document_for "impl_expr_kind_Self"
+
       method impl_ident ~goal ~name = 
-        parens (string name) ^^ space ^^ colon ^^ space ^^ goal#p
+        goal#p
 
       method impl_item ~ii_span:_ ~ii_generics:_ ~ii_v:_ ~ii_ident:_ ~ii_attrs:_ = (* NOT YET SEEN *)
         default_document_for "impl_item"
@@ -480,35 +481,15 @@ struct
       method item'_Quote ~super:_ ~quote:_ ~origin:_ =
         default_document_for "item'_Quote"
 
-        method item'_Trait ~super:_ ~name ~generics ~items ~safety:_ = 
-          (* let _, params, constraints = generics#v in
-          let header = string "module type" ^^ space ^^ name#p ^^ space ^^ equals ^^ space ^^ string "sig" in
-          let generic_types = List.filter_map ~f:(fun param ->
-            match param#v with
-            | { kind = GPType; ident; _ } ->
-                Some (string "type" ^^ space ^^ self#local_ident ident)
-            | _ -> None
-          ) params in
-          let trait_items = List.filter_map ~f:(fun item ->
-            match item#v with
-            | { ti_v = TIType _; ti_ident; _ } ->
-                Some (string "type" ^^ space ^^ string (RenderId.render ti_ident).name)
-            | { ti_v = TIFn typ; ti_ident; _ } ->
-                let ty = self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body typ in
-                Some (string "val" ^^ space ^^ string (RenderId.render ti_ident).name ^^ space ^^ 
-                        colon ^^ space ^^ ty#p)
-            | { ti_v = TIDefault { body; _ }; ti_ident; _ } ->
-                let ty = self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body body.typ in
-                Some (string "val" ^^ space ^^ string (RenderId.render ti_ident).name ^^ space ^^ 
-                        colon ^^ space ^^ ty#p)
-            | _ -> None
-          ) items in
-          let all_declarations = generic_types @ trait_items in
-          let end_decl = string "end" in
-          header ^^ nest 2 (break 1 ^^
-          separate (break 1) all_declarations) ^^ break 1 ^^
-          end_decl *)
-          separate_map (break 1) (fun x -> x#p) items
+      method item'_Trait ~super:_ ~name ~generics ~items ~safety:_ = 
+        let _, params, constraints = generics#v in
+        let header = string "module type" ^^ space ^^ name#p ^^ space ^^ equals ^^ space ^^ string "sig" in
+        let generic_types = separate_map space (fun x -> break 1 ^^ x#p) params in
+        let trait_items = separate_map space (fun x -> break 1 ^^ x#p) items in
+        let all_declarations = generic_types ^^ trait_items in
+        let end_decl = string "end" in
+        header ^^ nest 2  all_declarations ^^ break 1 ^^
+        end_decl
 
       method item'_TyAlias ~super:_ ~name:_ ~generics:_ ~ty:_ = (* NOT YET SEEN *)
         default_document_for "item'_TyAlias"
@@ -729,7 +710,11 @@ struct
       
       (* TODO: If more than one arg occurs, then this might not be correct. But will it ever happen? *)
       method trait_goal ~trait ~args =
-        separate_map space (fun x -> string "'" ^^ x#p) args ^^ space ^^ trait#p
+        let trait_name = (RenderId.render trait#v).name in
+        if String.equal trait_name "t_Sized" then
+          empty
+        else
+          separate_map space (fun x -> x#p) args ^^ space ^^ colon ^^ space ^^ trait#p
 
       (* TODO: Finish this and fix also, such that coverage works. *)
       method trait_item ~ti_span ~ti_generics ~ti_v ~ti_ident
@@ -738,14 +723,14 @@ struct
           match ti_v#v with
           | TIFn _ ->
             string "val" ^^ space ^^ ti_ident#p ^^ space ^^ colon ^^ space ^^ ti_v#p
-          | TIType x1 ->
-            match x1 with
-            | [] -> 
-              string "type" ^^ space ^^ ti_ident#p
-            | h :: _ ->
-              string "type" ^^ space ^^ ti_ident#p ^^ space ^^ colon ^^ space ^^ ti_v#p
-          | _ -> string "lol"
-        in item_type_doc
+          | TIType _ ->
+            (* Assuming that ALL 'self'-types are called 'v_Self'... *)
+            string "module" ^^ ti_v#p ^^ space ^^ string "with type v_Self" ^^ space ^^ equals ^^ space ^^ string "v_Self"
+          | TIDefault _ ->
+            string "Trait item default should be disabled."
+          | _ -> string "Something unexpected happened!"
+        in item_type_doc ^^
+        break 1 ^^ ti_generics#p
 
       method trait_item'_TIDefault ~params:_ ~body:_ ~witness:_ = (* NOT YET SEEN *)
         default_document_for "trait_item'_TIDefault"

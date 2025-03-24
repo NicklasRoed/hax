@@ -14,7 +14,11 @@ Import RecordSetNotations.
 
 (* NotImplementedYet *)
 
-Definition main (_ : unit) : (t_i32*unit) :=
-  let sum := 0 in
-  (f_fold (f_into_iter (impl_7__new (1) (10))) (sum) (fun sum i =>
-    f_add (sum) (i)),tt).
+Class t_Summary `{v_Self : Type} : Type :=
+  {
+    f_sum : Type;
+    _ :: `{t_Sized (f_sum)};
+    f_summarize : v_Self -> t_i32;
+  }.
+Arguments t_Summary:clear implicits.
+Arguments t_Summary (_).
