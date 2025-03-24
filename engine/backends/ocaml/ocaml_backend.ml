@@ -288,13 +288,13 @@ struct
       method generic_constraint_GCProjection _x1 = (* NOT YET SEEN *)
         default_document_for "generic_constraint_GCProjection"
 
-      method generic_constraint_GCType _x1 = (* NOT YET SEEN *)
-        default_document_for "generic_constraint_GCType"
+      method generic_constraint_GCType x1 =
+        string "module" ^^ space ^^ string x1#v.name ^^ space ^^ colon ^^ space ^^ x1#p
 
       method generic_param ~ident ~span:_ ~attrs:_ ~kind =
-        string "`" ^^ braces (ident#p ^^ space ^^ colon ^^ space ^^ kind#p)
+        string "type " ^^ ident#p
 
-      method generic_param_kind_GPConst ~typ = (* NOT YET SEEN *)
+      method generic_param_kind_GPConst ~typ =
         typ#p
 
       method generic_param_kind_GPLifetime ~witness:_ =
@@ -311,9 +311,13 @@ struct
       method generic_value_GType x1 = x1#p
 
       method generics ~params ~constraints =
+        (* TODO: Filter out Sized, irrelevant for OCaml translation *)
         if List.is_empty params then empty
         else
-          angles (separate_map comma (fun p -> p#p) params)
+          separate_map space (fun p -> parens p#p) params ^^ space ^^
+          separate_map space (fun p -> parens p#p) constraints
+          
+
 
       method guard ~guard:_ ~span:_ = default_document_for "guard"
 
@@ -408,44 +412,8 @@ struct
           else parens empty 
         in
         let keyword = string (if is_rec then "let rec" else "let") in
-        let _, generic_params, constraints = generics#v in
-        let type_var = 
-          List.find_map ~f:(fun param ->
-            match param#v with
-              | { kind = GPType; ident; _ } -> Some (self#local_ident ident)
-              | _ -> None
-            ) generic_params (* TODO: Works for one generic parameter, but not multiple. *)
-        in
-        let trait_bounds = List.filter_map ~f:(fun constraint_item ->
-          match constraint_item#v with
-            | GCType impl_ident ->
-              let trait_name = (RenderId.render impl_ident.goal.trait).name in
-              if String.equal trait_name "t_Sized" then
-                None
-              else
-                Some trait_name
-            | _ -> None
-        ) constraints in                
-        let trait_module_params = match type_var with
-          | Some tv -> List.map ~f:(fun trait_name ->
-              string "(module " ^^ string trait_name ^^ 
-              string " : " ^^ string trait_name ^^ 
-              string " with type v_Self = " ^^ tv ^^ string ")"
-            ) trait_bounds
-          | None -> []
-        in
-        let type_params_section = match type_var with
-          | Some tv -> string "(type " ^^ tv ^^ string ")"
-          | None -> empty
-        in
-        let generics_doc = 
-          if List.length trait_bounds > 0 then
-            space ^^ type_params_section ^^ space ^^ 
-            separate_map space (fun x -> x) trait_module_params
-          else 
-            generics#p 
-        in
-        keyword ^^ space ^^ name#p ^^ generics_doc ^^ space ^^ params_doc ^^
+        let generics_doc = generics#p in
+        keyword ^^ space ^^ name#p ^^ space ^^ generics_doc ^^ space ^^ params_doc ^^
         space ^^ string ":" ^^ space ^^ typ#p ^^ space ^^ equals ^^ 
         nest 2 (break 1 ^^ body#p)
     
@@ -664,7 +632,7 @@ struct
               else string "Uint"
             | Signed -> 
               if arch_size then
-                (if negative then !^"-" else empty)
+                empty
               else string "Int"
           in
           let suffix_doc =
@@ -672,7 +640,7 @@ struct
               empty
             else string ".of_int" ^^ space
           in
-        sign_doc ^^ size_doc ^^ suffix_doc ^^ string value
+        sign_doc ^^ size_doc ^^ suffix_doc ^^ (if negative then !^"-" else empty) ^^ string value
 
       method literal_String x1 = string "\"" ^^ string x1 ^^ string "\""
 
@@ -751,9 +719,11 @@ struct
 
       method supported_monads_MResult _x1 =
         default_document_for "supported_monads_MResult"
-
-      method trait_goal ~trait:_ ~args:_ = (* NOT YET SEEN *)
-        default_document_for "trait_goal"
+      
+      (* TODO: If more than one arg occurs, then this might not be correct. But will it ever happen? *)
+      method trait_goal ~trait ~args =
+        trait#p ^^ space ^^ string "with" ^^ space ^^ string "type" ^^ space ^^ 
+        string "v_Self" ^^ space ^^ equals ^^ space ^^ separate_map space (fun x -> x#p) args
 
       method trait_item ~ti_span:_ ~ti_generics:_ ~ti_v:_ ~ti_ident:_
           ~ti_attrs:_ = (* NOT YET SEEN *)
