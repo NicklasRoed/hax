@@ -14,11 +14,35 @@ Import RecordSetNotations.
 
 (* NotImplementedYet *)
 
-Class t_Summary `{v_Self : Type} : Type :=
-  {
-    f_sum : Type;
-    _ :: `{t_Sized (f_sum)};
-    f_summarize : v_Self -> t_i32;
-  }.
-Arguments t_Summary:clear implicits.
-Arguments t_Summary (_).
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+(* NotImplementedYet *)
+
+Definition main (_ : unit) : unit :=
+  tt.

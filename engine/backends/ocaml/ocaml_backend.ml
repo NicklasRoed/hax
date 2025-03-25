@@ -243,14 +243,15 @@ struct
         | [single_element] -> string (single_element)  (* Special case for single element *)
         | multiple -> string ("MULTIPLE_IDENTIFIERS: " ^ String.concat ~sep:", " multiple)  (* Multiple elements case *)
 
-
-      method expr'_GlobalVar_primitive ~super:_ x2 = let dude = 
-        match x2 with 
-        | Deref -> default_document_for "TODO"
-        | Cast -> string ("Int64.to_Int32") (* TEMPORARY SOLUTION *)
-        | LogicalOp op -> default_document_for "LOGOP TODO"
-      in
-      dude
+      (* TODO: Obj.magic for cast, fix other cases *)
+      method expr'_GlobalVar_primitive ~super:_ x2 = 
+        let dude = 
+          match x2 with 
+          | Deref -> default_document_for "TODO"
+          | Cast -> string ("Int64.to_Int32") (* TEMPORARY SOLUTION *)
+          | LogicalOp op -> default_document_for "LOGOP TODO"
+        in
+        dude
 
       method expr'_If ~super:_ ~cond ~then_ ~else_ =
         string "if" ^^ space ^^ cond#p ^^ space ^^ string "then"
@@ -271,6 +272,7 @@ struct
         default_document_for "expr'_Loop"
 
       method expr'_MacroInvokation ~super:_ ~macro:_ ~args:_ ~witness:_ =
+        (* NOT YET SEEN *)
         default_document_for "expr'_MacroInvokation"
 
       method expr'_Match ~super:_ ~scrutinee ~arms =
@@ -317,14 +319,12 @@ struct
       method generic_value_GType x1 = x1#p
 
       method generics ~params ~constraints =
-        (* TODO: Filter out Sized, irrelevant for OCaml translation *)
-        if List.is_empty params then empty
+        if List.is_empty params then 
+          empty
         else
           separate_map space (fun p -> parens p#p) params ^^ space ^^
           separate_map space (fun p -> parens p#p) constraints
           
-
-
       method guard ~guard:_ ~span:_ = default_document_for "guard"
 
       method guard'_IfLet ~super:_ ~lhs:_ ~rhs:_ ~witness:_ =
@@ -716,7 +716,7 @@ struct
         else
           separate_map space (fun x -> x#p) args ^^ space ^^ colon ^^ space ^^ trait#p
 
-      (* TODO: Finish this and fix also, such that coverage works. *)
+      (* Minimal generics-support; hard to express generics. *)
       method trait_item ~ti_span ~ti_generics ~ti_v ~ti_ident
           ~ti_attrs = 
         let item_type_doc =
@@ -729,16 +729,15 @@ struct
           | TIDefault _ ->
             string "Trait item default should be disabled."
           | _ -> string "Something unexpected happened!"
-        in item_type_doc ^^
-        break 1 ^^ ti_generics#p
+        in item_type_doc
 
-      method trait_item'_TIDefault ~params:_ ~body:_ ~witness:_ = (* NOT YET SEEN *)
+      method trait_item'_TIDefault ~params:_ ~body:_ ~witness:_ =
         default_document_for "trait_item'_TIDefault"
 
       method trait_item'_TIFn x1 = 
         x1#p
 
-      method trait_item'_TIType x1 = (* NOT YET SEEN *)
+      method trait_item'_TIType x1 =
         separate_map space (fun x -> x#p) x1
 
       method ty_TApp_application ~typ ~generics =
@@ -848,16 +847,16 @@ module TransformToInputLanguage =
   |> Phases.Drop_references
   |> Phases.Trivialize_assign_lhs
   |> Phases.Reconstruct_question_marks
-  (* |> Side_effect_utils.Hoist *)
+  |> Side_effect_utils.Hoist
   |> Phases.Local_mutation (**)
   |> Phases.Reject.Continue
-  |> Phases.Cf_into_monads 
+  |> Phases.Cf_into_monads
   |> Phases.Reject.EarlyExit
   |> Phases.Functionalize_loops
   |> Phases.Reject.As_pattern
   |> Phases.Reject.Dyn
   |> Phases.Reject.Trait_item_default
-  (*|> Phases.Bundle_cycles *) (**)
+  (* |> Phases.Bundle_cycles *)(**)
   |> Phases.Sort_items
   |> SubtypeToInputLanguage
   |> Identity
