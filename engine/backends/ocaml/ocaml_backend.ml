@@ -242,16 +242,21 @@ struct
         | [] -> empty  (* Handle empty list case *)
         | [single_element] -> string (single_element)  (* Special case for single element *)
         | multiple -> string ("MULTIPLE_IDENTIFIERS: " ^ String.concat ~sep:", " multiple)  (* Multiple elements case *)
-
-      (* TODO: Obj.magic for cast, fix other cases *)
-      method expr'_GlobalVar_primitive ~super:_ x2 = 
-        let dude = 
-          match x2 with 
-          | Deref -> default_document_for "TODO"
-          | Cast -> string ("Int64.to_Int32") (* TEMPORARY SOLUTION *)
-          | LogicalOp op -> default_document_for "LOGOP TODO"
-        in
-        dude
+      
+      (* TODO: Fix typecasting, as well as the other cases (shouldn't be too bad) *)
+      (* In particular, integer types and strings should be the most pressing matters *)
+      method expr'_GlobalVar_primitive ~super x2 = 
+        match super.typ with
+        | TArrow (x1, x2) ->
+          match x1 with
+          | h :: [] -> 
+            match x2 with
+              | TInt _ ->
+                self#entrypoint_ty x2 ^^ dot ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+              | TInt {size = SSize ; _} | _ -> 
+                self#entrypoint_ty x2 ^^ underscore ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+          | _ -> string "This should never happen" 
+        | _ -> string "This should never happen"
 
       method expr'_If ~super:_ ~cond ~then_ ~else_ =
         string "if" ^^ space ^^ cond#p ^^ space ^^ string "then"
