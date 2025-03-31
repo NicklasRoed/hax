@@ -243,21 +243,49 @@ struct
         | [single_element] -> string (single_element)  (* Special case for single element *)
         | multiple -> string ("MULTIPLE_IDENTIFIERS: " ^ String.concat ~sep:", " multiple)  (* Multiple elements case *)
       
-      (* TODO: Fix typecasting, as well as the other cases (shouldn't be too bad) *)
-      (* In particular, integer types and strings should be the most pressing matters *)
+      (* TODO: Fix logical operators, looks like it is being treated
+      as a function *)
       method expr'_GlobalVar_primitive ~super x2 = 
-        match super.typ with
-        | TArrow (x1, x2) ->
-          match x1 with
-          | h :: [] -> 
-            match x2 with
-              | TInt _ ->
-                self#entrypoint_ty x2 ^^ dot ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
-              | TInt {size = SSize ; _} | _ -> 
-                self#entrypoint_ty x2 ^^ underscore ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
-          | _ -> string "This should never happen" 
-        | _ -> string "This should never happen"
-
+        match x2 with
+        | LogicalOp logop ->
+          (match super.typ with
+          | TArrow (y1, y2) ->
+            (match y1 with
+            | h :: _ ->
+              (match logop with
+              | And -> 
+                string "&&"
+              | Or ->
+                parens (self#entrypoint_ty h) ^^ space ^^ string "||" ^^ space ^^ parens (self#entrypoint_ty y2)
+              | _ -> string "Unsupported logical operation")
+            | _ -> string "This should never happen1")
+          | _ -> string "This should never happen2")
+        | Deref -> default_document_for "deref"
+        | Cast ->
+          match super.typ with
+          | TArrow (y1, y2) ->
+            let y2_is_int = match y2 with
+              | TInt {size = SSize; _} -> false
+              | TInt _ -> true
+              | _ -> false
+            in
+            match y1 with
+            | [TInt {size = SSize; _} as h] -> 
+              if y2_is_int == true then
+                self#entrypoint_ty y2 ^^ dot ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+              else
+                self#entrypoint_ty y2 ^^ underscore ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+            | [TInt _ as h] ->
+              self#entrypoint_ty h ^^ dot ^^ string "to" ^^ underscore ^^ self#entrypoint_ty y2
+            | h :: [] ->
+              if y2_is_int == true then
+                self#entrypoint_ty y2 ^^ dot ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+              else 
+                self#entrypoint_ty y2 ^^ underscore ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+            | _ -> string "This should never happen"
+          | _ -> string "This should never happen"
+        | _ -> string "Unhandled primitive operation"
+        
       method expr'_If ~super:_ ~cond ~then_ ~else_ =
         string "if" ^^ space ^^ cond#p ^^ space ^^ string "then"
         ^^ nest 2 (break 1 ^^ then_#p)

@@ -1,4 +1,4 @@
 fn main() {
-    let a: i32 = 65;
-    let b = a as f32;
+    let a: isize = 65;
+    let b = a as u32;
 }
