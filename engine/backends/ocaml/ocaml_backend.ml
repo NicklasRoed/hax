@@ -11,6 +11,12 @@ include
       include On.Monadic_binding
       include On.Macro
       include On.Construct_base
+   (* include On.For_loop
+      include On.While_loop
+      include On.For_index_loop
+      include On.State_passing_loop
+      include On.Fold_like_loop
+      include On.Loop *)
     end)
     (struct
       let backend = Diagnostics.Backend.Ocaml
@@ -58,6 +64,12 @@ struct
         include Features.SUBTYPE.On.Construct_base
         include Features.SUBTYPE.On.Slice
         include Features.SUBTYPE.On.Macro
+     (* include Features.SUBTYPE.On.Loop 
+        include Features.SUBTYPE.On.For_loop
+        include Features.SUBTYPE.On.While_loop
+        include Features.SUBTYPE.On.For_index_loop
+        include Features.SUBTYPE.On.State_passing_loop
+        include Features.SUBTYPE.On.Fold_like_loop *)
       end)
 
   let metadata = Phase_utils.Metadata.make (Reject (NotInBackendLang backend))
@@ -185,13 +197,18 @@ struct
         if is_record && is_struct then
         (* In OCaml, records use curly braces with field assignments *)
           match base with
-            | Some x -> 
-              x#p ^^ space ^^ braces
-              (separate_map (semi ^^ space) 
-                  (fun (name, value) -> name#p ^^ space ^^ equals ^^ space ^^ value#p) 
-                  fields)
+            | Some x ->
+              let field_or_proj = List.map ~f:(fun x ->
+                match x with
+                | (hd, _) -> 
+                  match hd#v with
+                  | `Projector (`Concrete cident) -> string (RenderId.render cident).name
+                | _ -> string "What happened here?"
+              ) fields
+              in
+              braces (space ^^ x#p ^^ space ^^ string "with" ^^ space ^^ separate_map space (fun x -> x) field_or_proj ^^ space ^^ equals ^^ fields_or_empty ^^ space)  
             | None -> 
-              constructor#p ^^ space ^^ braces
+              braces
               (separate_map (semi ^^ space) 
                   (fun (name, value) -> 
                     let concrete_name = match name#v with
@@ -699,7 +716,8 @@ struct
 
       method pat'_PConstruct_inductive ~super ~constructor ~is_record 
           ~is_struct ~fields =
-        let constructor_doc = constructor#p in          
+        let constructor_doc = constructor#p
+        in          
         if List.length fields = 0 then
           constructor_doc
         else if is_record then
