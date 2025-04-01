@@ -40,6 +40,7 @@ depends: [
   "ppxlib"
   "menhirLib"
   "sedlex"
+  "stdint" {= "0.7.2"}
   "odoc" {with-doc}
 ]
 build: [
