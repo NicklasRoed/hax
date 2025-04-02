@@ -148,7 +148,64 @@ struct
         default_document_for "expr'_AddressOf"
 
       method expr'_App_application ~super:_ ~f ~args ~generics:_ =
-        f#p ^^ concat_map (fun x -> space ^^ x#p) args
+        let operators =
+          let c = Global_ident.of_name ~value:true in
+          [
+            (c Rust_primitives__hax__array_of_list, (3, "Array.set")); 
+            (c Core__ops__index__Index__index, (2, "Array.get")); 
+            (c Core__ops__bit__BitXor__bitxor, (2, "lxor")); 
+            (c Core__ops__bit__BitAnd__bitand, (2, "land")); 
+            (c Core__ops__bit__BitOr__bitor, (2, "lor")); 
+            (c Core__ops__bit__Not__not, (1, "lnot")); 
+            (c Core__ops__arith__Add__add, (2, "+")); 
+            (c Core__ops__arith__Sub__sub, (2, "-")); 
+            (c Core__ops__arith__Mul__mul, (2, "*")); 
+            (c Core__ops__arith__Div__div, (2, "/")); 
+            (c Core__ops__arith__Rem__rem, (2, "mod")); 
+            (c Core__ops__bit__Shl__shl, (2, "lsl")); 
+            (c Core__ops__bit__Shr__shr, (2, "lsr"));
+            (c Core__cmp__PartialEq__eq, (2, "=")); 
+            (c Core__cmp__PartialOrd__lt, (2, "<")); 
+            (c Core__cmp__PartialOrd__le, (2, "<="));
+            (c Core__cmp__PartialEq__ne, (2, "<>")); 
+            (c Core__cmp__PartialOrd__ge, (2, ">="));
+            (c Core__cmp__PartialOrd__gt, (2, ">"));
+            (`Primitive (LogicalOp And), (2, "&&"));
+            (`Primitive (LogicalOp Or), (2, "||"));
+            (c Rust_primitives__hax__int__add, (2, "+")); 
+            (c Rust_primitives__hax__int__sub, (2, "-")); 
+            (c Rust_primitives__hax__int__mul, (2, "*")); 
+            (c Rust_primitives__hax__int__div, (2, "/")); 
+            (c Rust_primitives__hax__int__rem, (2, "mod")); 
+            (c Rust_primitives__hax__int__ge, (2, ">=")); 
+            (c Rust_primitives__hax__int__le, (2, "<=")); 
+            (c Rust_primitives__hax__int__gt, (2, ">")); 
+            (c Rust_primitives__hax__int__lt, (2, "<")); 
+            (c Rust_primitives__hax__int__ne, (2, "<>")); 
+            (c Rust_primitives__hax__int__eq, (2, "="));
+          ]
+          |> Map.of_alist_exn (module Global_ident)
+        in
+        (match f#v with
+        | { e = GlobalVar x } when Map.mem operators x ->
+          let arity, op = Map.find_exn operators x in
+          if List.length args <> arity then
+              string "Bad arity for operator application"
+          else
+            let args_doc = List.map ~f:(fun x -> x#p) args
+            in
+            (match arity with
+            | 1 ->
+              let unary_arg = List.nth_exn args_doc 0 in
+              string op ^^ space ^^ unary_arg
+            | 2 ->
+              let binary_arg1 = List.nth_exn args_doc 0 in
+              let binary_arg2 = List.nth_exn args_doc 1 in
+              binary_arg1 ^^ space ^^ string op ^^ space ^^ binary_arg2
+            | 3 ->
+              string op ^^ concat_map (fun x -> space ^^ x#p) args
+            )
+        | _ -> f#p ^^ concat_map (fun x -> space ^^ x#p) args)
 
       method expr'_App_constant ~super:_ ~constant ~generics:_ =
         constant#p
@@ -346,8 +403,11 @@ struct
       method generic_constraint_GCProjection _x1 = (* NOT YET SEEN *)
         default_document_for "generic_constraint_GCProjection"
 
+      (* TODO: Fix this *)
       method generic_constraint_GCType x1 =
-        string "module" ^^ space ^^ string x1#v.name ^^ space ^^ colon ^^ space ^^ x1#p
+        if String.equal ((RenderId.render x1#v.goal.trait).name) "t_Sized" then
+          empty
+        else string "module" ^^ space ^^ string x1#v.name ^^ space ^^ string "with type v_Self" ^^ space ^^ equals ^^ space ^^ x1#p 
 
       method generic_param ~ident ~span:_ ~attrs:_ ~kind =
         string "type " ^^ ident#p
@@ -369,11 +429,19 @@ struct
       method generic_value_GType x1 = x1#p
 
       method generics ~params ~constraints =
+        let constraints_doc = List.filter ~f:(
+          fun x ->
+            match x#v with
+            | GCType impl_ident ->
+              not (String.equal ((RenderId.render impl_ident.goal.trait).name) "t_Sized")
+            | _ -> true
+        ) constraints
+        in
         if List.is_empty params then 
           empty
         else
           separate_map space (fun p -> parens p#p) params ^^ space ^^
-          separate_map space (fun p -> parens p#p) constraints
+          separate_map space (fun p -> parens p#p) constraints_doc
           
       method guard ~guard:_ ~span:_ = default_document_for "guard"
 
@@ -759,13 +827,8 @@ struct
       method supported_monads_MResult _x1 =
         default_document_for "supported_monads_MResult"
       
-      (* TODO: If more than one arg occurs, then this might not be correct. But will it ever happen? *)
       method trait_goal ~trait ~args =
-        let trait_name = (RenderId.render trait#v).name in
-        if String.equal trait_name "t_Sized" then
-          empty
-        else
-          separate_map space (fun x -> x#p) args ^^ space ^^ colon ^^ space ^^ trait#p
+        separate_map space (fun x -> x#p) args ^^ space ^^ colon ^^ space ^^ trait#p
 
       (* Minimal generics-support; hard to express generics. *)
       method trait_item ~ti_span ~ti_generics ~ti_v ~ti_ident
@@ -796,7 +859,7 @@ struct
 
       method ty_TApp_tuple ~types = 
         if List.length types == 0 then string "unit"
-        else parens (separate_map (comma ^^ space) (fun x -> self#entrypoint_ty x) types)
+        else parens (separate_map (space ^^ star ^^ space) (fun x -> self#entrypoint_ty x) types)
 
       method ty_TArray ~typ ~length:_ = typ#p ^^ space ^^ string "array" 
       method ty_TArrow x1 x2 = 
@@ -898,7 +961,7 @@ module TransformToInputLanguage =
   |> Phases.Drop_references
   |> Phases.Trivialize_assign_lhs
   |> Phases.Reconstruct_question_marks
-  |> Side_effect_utils.Hoist
+  (* |> Side_effect_utils.Hoist *)
   |> Phases.Local_mutation (**)
   |> Phases.Reject.Continue
   |> Phases.Cf_into_monads

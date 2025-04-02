@@ -1,7 +1,7 @@
 fn main() {
-    let mut n = 0;
-    let array = [1, 2, 3, 4];
-    loop {
-        n = n + 1;
-    }
+    let z = foo(4, 5);
+}
+
+fn foo(x: i32, y: i32) -> i32 {
+    return x + y;
 }

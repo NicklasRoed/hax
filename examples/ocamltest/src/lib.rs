@@ -9,3 +9,5 @@ mod tuples;
 mod example;
 
 mod record_access;
+
+mod generics;
