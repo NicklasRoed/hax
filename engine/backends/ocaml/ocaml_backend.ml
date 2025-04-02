@@ -403,30 +403,29 @@ struct
       method generic_constraint_GCProjection _x1 = (* NOT YET SEEN *)
         default_document_for "generic_constraint_GCProjection"
 
-      (* TODO: Fix this *)
       method generic_constraint_GCType x1 =
-        if String.equal ((RenderId.render x1#v.goal.trait).name) "t_Sized" then
-          empty
-        else string "module" ^^ space ^^ string x1#v.name ^^ space ^^ string "with type v_Self" ^^ space ^^ equals ^^ space ^^ x1#p 
+        default_document_for "generic_constraint_GCType"
 
       method generic_param ~ident ~span:_ ~attrs:_ ~kind =
-        string "type " ^^ ident#p
+        string ("'" ^ (String.lowercase ident#v.name))
 
       method generic_param_kind_GPConst ~typ =
-        typ#p
+        default_document_for "generic_param_kind_GPConst"
 
       method generic_param_kind_GPLifetime ~witness:_ =
         default_document_for "generic_param_kind_GPLifetime"
 
       method generic_param_kind_GPType =
-        string "Type"
+        default_document_for "generic_param_kind_GPType"
 
-      method generic_value_GConst x1 = x1#p
+      method generic_value_GConst x1 = 
+        default_document_for "generic_value_GConst"
 
       method generic_value_GLifetime ~lt:_ ~witness:_ =
         default_document_for "generic_value_GLifetime"
 
-      method generic_value_GType x1 = x1#p
+      method generic_value_GType x1 =
+        default_document_for "generic_value_GConst"
 
       method generics ~params ~constraints =
         let constraints_doc = List.filter ~f:(
@@ -440,7 +439,7 @@ struct
         if List.is_empty params then 
           empty
         else
-          separate_map space (fun p -> parens p#p) params ^^ space ^^
+          separate_map space (fun p -> p#p) params ^^ space ^^
           separate_map space (fun p -> parens p#p) constraints_doc
           
       method guard ~guard:_ ~span:_ = default_document_for "guard"
@@ -517,6 +516,7 @@ struct
               name#p ^^ space ^^ string "of" ^^ space ^^ separate_map (space ^^ star ^^ space) (fun x -> x#p) record_types
 
       method item'_Fn ~super ~name ~generics ~body ~params ~safety:_ =
+        let _, g_params, g_constraints = generics#v in
         let is_rec =
           Set.mem
             (U.Reducers.collect_concrete_idents#visit_expr () body#v)
@@ -537,7 +537,40 @@ struct
           else parens empty 
         in
         let keyword = string (if is_rec then "let rec" else "let") in
-        let generics_doc = generics#p in
+        let type_params = List.filter_map  
+          ~f:(fun p ->
+              match p#v.kind with
+              | GPType -> Some p#v.ident.name
+              | _ -> None
+          ) g_params 
+        in
+        let trait_bounds = List.filter_map  
+          ~f:(fun c ->
+              match c#v with
+              | GCType impl_id -> 
+                if not (String.equal (RenderId.render impl_id.goal.trait).name "t_Sized") then
+                  Some (impl_id.goal.trait)
+                else
+                  None
+              | _ -> None
+          ) g_constraints 
+        in
+        let type_decls = if List.is_empty type_params then empty else
+          separate_map space 
+            (fun name -> 
+              string "(type " ^^ string (String.lowercase name) ^^ string ")"
+            ) type_params
+        in 
+        let module_constraints = List.filter_map 
+          ~f:(fun trait ->
+              Some (string "(module M : " ^^ 
+              string (RenderId.render trait).name ^^ 
+              string " with type t = " ^^ 
+              string (String.lowercase (List.hd_exn type_params)) ^^ 
+              string ")")
+          ) trait_bounds 
+        in
+        let generics_doc = type_decls ^^ space ^^ separate_map space (fun x -> x) module_constraints in
         keyword ^^ space ^^ name#p ^^ space ^^ generics_doc ^^ space ^^ params_doc ^^
         space ^^ string ":" ^^ space ^^ typ#p ^^ space ^^ equals ^^ 
         nest 2 (break 1 ^^ body#p)
@@ -602,12 +635,21 @@ struct
       method item'_Trait ~super:_ ~name ~generics ~items ~safety:_ = 
         let _, params, constraints = generics#v in
         let header = string "module type" ^^ space ^^ name#p ^^ space ^^ equals ^^ space ^^ string "sig" in
-        let generic_types = separate_map space (fun x -> break 1 ^^ x#p) params in
+        let self_type_decl = break 1 ^^ string "type t" in
+        let additional_types = separate_map space 
+          (fun x -> 
+            match x#v.kind with
+            | GPType -> 
+              if String.equal (String.lowercase x#v.ident.name) "self" then
+                empty
+              else
+                break 1 ^^ string "type " ^^ string (String.lowercase x#v.ident.name)
+            | _ -> empty
+        ) params in
         let trait_items = separate_map space (fun x -> break 1 ^^ x#p) items in
-        let all_declarations = generic_types ^^ trait_items in
-        let end_decl = string "end" in
-        header ^^ nest 2  all_declarations ^^ break 1 ^^
-        end_decl
+        let all_declarations = self_type_decl ^^ additional_types ^^ trait_items in
+        let end_decl = break 1 ^^ string "end" in
+        header ^^ nest 2 all_declarations ^^ end_decl
 
       method item'_TyAlias ~super:_ ~name:_ ~generics:_ ~ty:_ = (* NOT YET SEEN *)
         default_document_for "item'_TyAlias"
@@ -769,7 +811,7 @@ struct
       method modul x1 = separate_map (break 1) (fun x -> x#p) x1
 
       method param ~pat ~typ ~typ_span:_ ~attrs:_ =
-        parens (string "~" ^^ pat#p ^^ string ": " ^^ typ#p)
+        string "~" ^^ parens (pat#p ^^ string ": " ^^ typ#p)
 
       method pat ~p ~span:_ ~typ:_ = p#p
 
@@ -892,7 +934,13 @@ struct
               | _ -> empty)
           ^^ string ".t"
       method ty_TOpaque x1 = x1#p
-      method ty_TParam x1 = x1#p
+      method ty_TParam x1 = 
+        let name = x1#v.name in
+        if String.equal (String.lowercase name) "self" then
+          string "t"
+        else
+          string ("'" ^ (String.lowercase name))
+
       method ty_TRawPointer ~witness:_ = default_document_for "ty_TRawPointer"
 
       method ty_TRef ~witness:_ ~region:_ ~typ:_ ~mut:_ =

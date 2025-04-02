@@ -1,24 +1,30 @@
-trait Measurable {
-    fn measure(&self) -> usize;
+// Define a minimal trait
+trait Minimal {
+    fn minimal_method(&self) -> bool;
 }
 
-fn first<A, B>((value, _): (A, i32), y: B) -> A
-where
-    B: Measurable,
-{
-    // Using the trait
-    let _ = y.measure();
-    value
+// Generic function with trait bound
+fn identity<T: Minimal>(x: T) -> T {
+    x
 }
 
-trait GenericTrait<T> {
-    fn transform(&self, value: T) -> T;
-    fn check(&self, a: T, b: T) -> bool;
+// Implement the trait for i32
+impl Minimal for i32 {
+    fn minimal_method(&self) -> bool {
+        true
+    }
 }
 
-fn use_generic<A, G, T>((value, _): (A, i32), generic_impl: G) -> A
-where
-    G: GenericTrait<T>,
-{
-    value
+fn main() {
+    let x: i32 = 42;
+    let y = identity(x);
 }
+
+trait Creator {
+    fn create(value: i32) -> Self;
+}
+
+fn factory<T: Creator>(x: i32) -> T {
+    T::create(x)
+}
+
