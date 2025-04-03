@@ -939,7 +939,7 @@ struct
         if String.equal (String.lowercase name) "self" then
           string "t"
         else
-          string ("'" ^ (String.lowercase name))
+          string (String.lowercase name)
 
       method ty_TRawPointer ~witness:_ = default_document_for "ty_TRawPointer"
 
