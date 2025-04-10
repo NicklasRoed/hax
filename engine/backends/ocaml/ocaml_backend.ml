@@ -99,12 +99,6 @@ struct
 
   let default_string_for s = "TODO: please implement the method `" ^ s ^ "`"
   let default_document_for = default_string_for >> string
-  let trim_string str =
-    if String.length str >= 2 then
-      match String.sub str 0 2 with
-      | "f_" | "v_" -> String.sub str 2 (String.length str - 2)
-      | _ -> str
-    else str
 
   type ('get_span_data, 'a) object_type =
     ('get_span_data, 'a) BasePrinter.Gen.object_type
@@ -192,27 +186,63 @@ struct
           if List.length args <> arity then
               string "Bad arity for operator application"
           else
-            let args_doc = List.map ~f:(fun x -> x#p) args
-            in
             (match arity with
             | 1 ->
-              let unary_arg = List.nth_exn args_doc 0 in
-              string op ^^ space ^^ unary_arg
+              let unary_arg = List.nth_exn args 0 in
+              string op ^^ space ^^ parens unary_arg#p
             | 2 ->
-              let binary_arg1 = List.nth_exn args_doc 0 in
-              let binary_arg2 = List.nth_exn args_doc 1 in
-              binary_arg1 ^^ space ^^ string op ^^ space ^^ binary_arg2
+              let binary_arg1 = List.nth_exn args 0 in
+              let binary_arg2 = List.nth_exn args 1 in
+              (match (binary_arg1#v.typ, binary_arg2#v.typ) with
+                | (TInt {size; signedness}, _) | (_, TInt {size; signedness}) ->
+                  let is_arch = false in 
+                  let sign = match signedness with
+                    | Signed -> string "Int"
+                    | Unsigned -> string "Uint"
+                  in
+                  let int_op = match op with
+                  | "+" | "-" | "*" | "/" ->
+                    string "." ^^ parens (parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p)
+                  | "=" | "<" | "<=" | ">" | ">=" | "<>" ->
+                    string ".compare" ^^ space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p ^^ space ^^
+                    string op ^^ space ^^ string "0"
+                  | "mod" ->
+                    string ".rem" ^^ space ^^ parens binary_arg1#p ^^ parens binary_arg2#p
+                  | _ -> string "What"
+                  in
+                  let int_size = match size with
+                    | SSize -> 
+                      let is_arch = true in
+                      parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p
+                    | S8 ->
+                      string "8"
+                    | S16 ->
+                      string "16"
+                    | S32 ->
+                      string "32"
+                    | S64 ->
+                      string "64"
+                    | S128 ->
+                      string "128"
+                  in
+                  if is_arch == true then int_size
+                  else sign ^^ int_size ^^ int_op
+                | _ ->
+                  if String.equal "Array.get" op then
+                    string op ^^ space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p
+                  else
+                    parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p) 
             | 3 ->
-              string op ^^ concat_map (fun x -> space ^^ x#p) args
+              string op ^^ concat_map (fun x -> space ^^ parens x#p) args
             )
-        | _ -> f#p ^^ concat_map (fun x -> space ^^ x#p) args)
+        | _ -> f#p ^^ concat_map (fun x -> space ^^ parens x#p) args)
 
       method expr'_App_constant ~super:_ ~constant ~generics:_ =
         constant#p
       
       method expr'_App_field_projection ~super:_ ~field ~e =
        let rendered = RenderId.render field#v in
-        string "v_" ^^ e#p ^^ string "." ^^ string rendered.name
+       e#p ^^ string "." ^^ string rendered.name
       
       (* TODO: Implement for cases where nth > 2. *)
       method expr'_App_tuple_projection ~super ~size ~nth ~e = 
@@ -244,12 +274,11 @@ struct
         ^^ space ^^ !^"->" ^^ space
         ^^ nest 2 (break 1 ^^ body#p)) (* Closures are weird *)
 
-      method expr'_Construct_inductive ~super:_ ~constructor ~is_record ~is_struct ~fields ~base =
+      method expr'_Construct_inductive ~super ~constructor ~is_record ~is_struct ~fields ~base =
         let fields_or_empty =
           if List.is_empty fields then empty
           else
-            space
-            ^^ (separate_map (comma ^^ space) (fun x -> (snd x)#p) fields)
+            space ^^ parens ((separate_map (comma ^^ space) (fun x -> (snd x)#p) fields))
         in
         if is_record && is_struct then
         (* In OCaml, records use curly braces with field assignments *)
@@ -258,12 +287,12 @@ struct
               let field_or_proj = List.map ~f:(fun x ->
                 match x with
                 | (hd, _) -> 
-                  match hd#v with
-                  | `Projector (`Concrete cident) -> string (RenderId.render cident).name
-                | _ -> string "What happened here?"
+                  (match hd#v with
+                  | `Projector (`Concrete cident) | `Concrete cident -> string (RenderId.render cident).name
+                  | _ -> string "What happened here?")
               ) fields
               in
-              braces (space ^^ x#p ^^ space ^^ string "with" ^^ space ^^ separate_map space (fun x -> x) field_or_proj ^^ space ^^ equals ^^ fields_or_empty ^^ space)  
+              braces (space ^^ x#p ^^ space ^^ string "with" ^^ space ^^ separate space field_or_proj ^^ space ^^ equals ^^ fields_or_empty ^^ space)  
             | None -> 
               braces
               (separate_map (semi ^^ space) 
@@ -290,7 +319,7 @@ struct
             match List.map2 ~f:(fun id expr -> id#p ^^ space ^^ equals ^^ space ^^ expr#p) field_idents field_exprs with 
             | Ok result -> 
               constructor#p ^^ space ^^ lbrace ^^ separate (semi ^^ space) result ^^ rbrace
-            | Unequal_lengths -> string "GGS"
+            | Unequal_lengths -> string "Something very unexpected happened."
             in fields_docs
         else
           string "Something very unexpected happened."
@@ -306,19 +335,17 @@ struct
       method expr'_EffectAction ~super:_ ~action:_ ~argument:_ =
         default_document_for "expr'_EffectAction"
 
-      method expr'_GlobalVar_concrete ~super:_ x2 = 
+      method expr'_GlobalVar_concrete ~super x2 =
         let x = U.Reducers.collect_concrete_idents#visit_concrete_ident () x2#v in
         let concrete_idents_list = Set.elements x in
         let results = List.map 
           ~f:(fun concrete_id -> (RenderId.render concrete_id).name) concrete_idents_list 
         in
         match results with
-        | [] -> empty  (* Handle empty list case *)
-        | [single_element] -> string (single_element)  (* Special case for single element *)
-        | multiple -> string ("MULTIPLE_IDENTIFIERS: " ^ String.concat ~sep:", " multiple)  (* Multiple elements case *)
+        | [] -> empty
+        | [single_element] -> string single_element
+        | multiple -> string "haha" 
       
-      (* TODO: Fix logical operators, looks like it is being treated
-      as a function *)
       method expr'_GlobalVar_primitive ~super x2 = 
         match x2 with
         | LogicalOp logop ->
@@ -404,10 +431,14 @@ struct
         default_document_for "generic_constraint_GCProjection"
 
       method generic_constraint_GCType x1 =
-        default_document_for "generic_constraint_GCType"
+        x1#p
 
       method generic_param ~ident ~span:_ ~attrs:_ ~kind =
-        string ("'" ^ (String.lowercase ident#v.name))
+        kind#p ^^ string (String.lowercase ident#v.name)
+        (* match kind#v with
+        | GPType _ ->
+          string ("'" ^ String.lowercase (ident#v.name))
+        | _ -> string "lol" *)
 
       method generic_param_kind_GPConst ~typ =
         default_document_for "generic_param_kind_GPConst"
@@ -416,7 +447,7 @@ struct
         default_document_for "generic_param_kind_GPLifetime"
 
       method generic_param_kind_GPType =
-        default_document_for "generic_param_kind_GPType"
+        string "'"
 
       method generic_value_GConst x1 = 
         default_document_for "generic_value_GConst"
@@ -425,14 +456,14 @@ struct
         default_document_for "generic_value_GLifetime"
 
       method generic_value_GType x1 =
-        default_document_for "generic_value_GConst"
+        x1#p
 
       method generics ~params ~constraints =
         let constraints_doc = List.filter ~f:(
           fun x ->
             match x#v with
             | GCType impl_ident ->
-              not (String.equal ((RenderId.render impl_ident.goal.trait).name) "t_Sized")
+              not (String.equal ((RenderId.render impl_ident.goal.trait).name) "Sized")
             | _ -> true
         ) constraints
         in
@@ -447,8 +478,8 @@ struct
       method guard'_IfLet ~super:_ ~lhs:_ ~rhs:_ ~witness:_ =
         default_document_for "guard'_IfLet"
 
-      method impl_expr ~kind:_ ~goal = 
-        goal#p (* NOT YET SEEN *)
+      method impl_expr ~kind ~goal = 
+        kind#p
 
       method impl_expr_kind_Builtin _x1 =
         default_document_for "impl_expr_kind_Builtin"
@@ -461,8 +492,8 @@ struct
       method impl_expr_kind_ImplApp ~impl:_ ~args:_ =
         default_document_for "impl_expr_kind_ImplApp"
 
-      method impl_expr_kind_LocalBound ~id:_ =
-        default_document_for "impl_expr_kind_LocalBound"
+      method impl_expr_kind_LocalBound ~id =
+        string id
 
       method impl_expr_kind_Parent ~impl:_ ~ident:_ =
         default_document_for "impl_expr_kind_Parent"
@@ -517,63 +548,91 @@ struct
 
       method item'_Fn ~super ~name ~generics ~body ~params ~safety:_ =
         let _, g_params, g_constraints = generics#v in
-        let is_rec =
-          Set.mem
-            (U.Reducers.collect_concrete_idents#visit_expr () body#v)
-            name#v
+        let id_count = ref 0 in
+        let tparam_id_counts = 
+          List.iter g_params ~f:(
+            fun _ -> incr id_count
+        )
         in
+        let constraints_to_params =
+          List.concat_map g_constraints ~f:(fun const ->
+            match const#v with
+            | GCType { goal = { trait; args }; name } ->
+              List.map args ~f:(fun arg ->
+                match arg with
+                | GType (TParam local_id) ->
+                  let () = id_count := !id_count + 1 in
+                  let new_id = string_of_int !id_count in
+                  let new_var_name = name in
+                  let new_local_ident_var = 
+                     Local_ident.{ name = new_var_name; id = mk_id Expr !id_count }                
+                  in
+                  let () = id_count := !id_count + 1 in
+                  let new_typ_id = string_of_int !id_count in
+                  let new_typ_name = 
+                    "'" ^ local_id.name ^ " " 
+                    ^ (RenderId.render trait).name
+                  in
+                  let new_local_ident_typ =
+                    Local_ident.{ name = new_typ_name; id = mk_id Typ !id_count }
+                  in
+                  {
+                    pat = {
+                      p = PBinding {
+                        mut = Immutable;
+                        mode = ByValue;
+                        var = new_local_ident_var;
+                        typ = TParam new_local_ident_typ;
+                        subpat = None;
+                      };
+                      span = Span.dummy ();
+                      typ = TParam new_local_ident_typ;
+                    };
+                    typ = TParam new_local_ident_typ;
+                    typ_span = None;
+                    attrs = [];
+                  }
+                | _ -> (List.hd_exn params)#v
+              )
+            | _ -> List.map params ~f:(fun x -> x#v)
+          )
+        in
+        let const_params_to_doc = List.map constraints_to_params ~f:(
+          fun x -> self#_do_not_override_lazy_of_param AstPos_param__typ x
+        )
+        in
+        let params = params @ const_params_to_doc in
         let typ =
           self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body body#v.typ
         in
-        let has_params = not (List.is_empty (List.filter 
-          ~f:(fun x -> 
-              match x#v.pat.p with
-                | PWild -> false
-                | _ -> true) 
-              params)
-        ) in
-        let params_doc = if has_params 
-          then separate_map space (fun p -> p#p) params
-          else parens empty 
+        let header = 
+          string "let" ^^ space ^^ name#p ^^ space ^^ separate_map space (fun x -> x#p) params
+          ^^ space ^^ colon ^^ space ^^ typ#p ^^ space ^^ equals
         in
-        let keyword = string (if is_rec then "let rec" else "let") in
-        let type_params = List.filter_map  
-          ~f:(fun p ->
-              match p#v.kind with
-              | GPType -> Some p#v.ident.name
-              | _ -> None
-          ) g_params 
+        let rec get_app_traits expr =
+          let handle_concrete_x x trait =
+            match trait with
+            | Some ( {kind = LocalBound { id }; goal},  _) ->
+              Some id, GlobalVar (`Projector (`Concrete x))
+            | None -> 
+              None, GlobalVar (`Concrete x)
+          in
+          match expr.e with
+          | App {f = {e = GlobalVar (`Concrete x); _} as f_expr; args; generic_args; bounds_impls; trait = app_trait} -> 
+              let new_e = handle_concrete_x x app_trait in
+              let new_f = { f_expr with e = new_e } in
+              { expr with e = App {f = new_f; args; generic_args; bounds_impls; trait = app_trait} }
+          | Let { monadic; lhs; rhs = { e = App {f = {e = GlobalVar (`Concrete x); _} as f_expr; args; generic_args; bounds_impls; trait}; span; typ } as rhs; 
+                  body = let_body; } -> 
+              let new_e = handle_concrete_x x trait in
+              let new_f = { f_expr with e = new_e } in
+              let new_app = App {f = new_f; args; generic_args; bounds_impls; trait} in
+              let new_rhs = { rhs with e = new_app } in
+              let processed_body = get_app_traits let_body in
+              { expr with e = Let { monadic; lhs; rhs = new_rhs; body = processed_body; } }
+          | _ -> expr
         in
-        let trait_bounds = List.filter_map  
-          ~f:(fun c ->
-              match c#v with
-              | GCType impl_id -> 
-                if not (String.equal (RenderId.render impl_id.goal.trait).name "t_Sized") then
-                  Some (impl_id.goal.trait)
-                else
-                  None
-              | _ -> None
-          ) g_constraints 
-        in
-        let type_decls = if List.is_empty type_params then empty else
-          separate_map space 
-            (fun name -> 
-              string "(type " ^^ string (String.lowercase name) ^^ string ")"
-            ) type_params
-        in 
-        let module_constraints = List.filter_map 
-          ~f:(fun trait ->
-              Some (string "(module M : " ^^ 
-              string (RenderId.render trait).name ^^ 
-              string " with type t = " ^^ 
-              string (String.lowercase (List.hd_exn type_params)) ^^ 
-              string ")")
-          ) trait_bounds 
-        in
-        let generics_doc = type_decls ^^ space ^^ separate_map space (fun x -> x) module_constraints in
-        keyword ^^ space ^^ name#p ^^ space ^^ generics_doc ^^ space ^^ params_doc ^^
-        space ^^ string ":" ^^ space ^^ typ#p ^^ space ^^ equals ^^ 
-        nest 2 (break 1 ^^ body#p)
+        header ^^ nest 2 (break 1 ^^  (self#_do_not_override_lazy_of_expr AstPos_expr__e (get_app_traits body#v))#p)
     
       method item'_HaxError ~super:_ _x2 = default_document_for "item'_HaxError"
 
@@ -582,7 +641,7 @@ struct
         default_document_for "item'_IMacroInvokation"
 
       method item'_Impl ~super:_ ~generics ~self_ty ~of_trait ~items ~parent_bounds:_ ~safety:_ =
-        let trait_tuple = of_trait#v in
+        (* let trait_tuple = of_trait#v in
         let trait_name = fst trait_tuple in
         let trait_args = snd trait_tuple in
           let impl_name = match self_ty#v with
@@ -623,8 +682,43 @@ struct
             type_decl ^^ break 1 ^^
             separate (break 1) impl_items) ^^ break 1 ^^
             end_decl
-          )
-
+          ) *)
+        let _, params, constraints = generics#v in
+        let trait_tuple = of_trait#v in
+        let trait_name = fst trait_tuple in
+        let lowercase_trait_args trait_arg =
+          match trait_arg#v with
+          | GType (TApp { ident = `Concrete con_ident; args }) ->
+            let con_ident_name_str = (RenderId.render con_ident).name in
+            String.lowercase con_ident_name_str
+          | _ -> "Not expected type"
+        in
+        let trait_args = List.map (snd trait_tuple) ~f:lowercase_trait_args
+        in
+        let impl_name = match self_ty#v with
+          | TApp { ident; args } -> 
+            (match ident with
+            | `Concrete id -> 
+              string (RenderId.render trait_name#v).name
+            | _ -> string "UnknownType")
+          | _ -> string "lol"
+        in
+        let header = string "let" ^^ space ^^ trait_name#p ^^ (List.hd_exn (snd trait_tuple))#p ^^ space
+                     ^^ colon ^^ space ^^ parens (separate_map (comma ^^ space) (fun x -> string x) trait_args) ^^ space ^^
+                      string (String.lowercase ((RenderId.render trait_name#v).name)) ^^ space ^^ equals ^^ space ^^ lbrace
+        in
+        let unwrapped_items = List.map items ~f:(fun x -> x#v) in
+        let fn_to_closure item_lst =
+          List.map item_lst ~f:(
+            fun item ->
+              match item with
+              | { ii_v = IIFn { body; params }; ii_ident; _ } ->
+                string ((RenderId.render ii_ident).name) ^^ space ^^ equals ^^ space ^^ parens (string "fun" ^^ space ^^ separate_map space (fun x -> (self#_do_not_override_lazy_of_param AstPos_param__typ x)#p) params ^^
+                space ^^ string "->" ^^ nest 2 (break 1 ^^ space ^^ (self#_do_not_override_lazy_of_expr AstPos_expr__e body)#p))
+              | _ -> string "Something bad happened.")
+        in
+        let processed_items = fn_to_closure unwrapped_items in
+        header ^^ nest 2 (break 1 ^^ separate space processed_items) ^^ break 1 ^^ rbrace
 
       method item'_NotImplementedYet =
         string "(* Not Implemented Yet *)"
@@ -633,84 +727,101 @@ struct
         default_document_for "item'_Quote"
 
       method item'_Trait ~super:_ ~name ~generics ~items ~safety:_ = 
-        let _, params, constraints = generics#v in
-        let header = string "module type" ^^ space ^^ name#p ^^ space ^^ equals ^^ space ^^ string "sig" in
-        let self_type_decl = break 1 ^^ string "type t" in
-        let additional_types = separate_map space 
-          (fun x -> 
-            match x#v.kind with
-            | GPType -> 
-              if String.equal (String.lowercase x#v.ident.name) "self" then
-                empty
-              else
-                break 1 ^^ string "type " ^^ string (String.lowercase x#v.ident.name)
-            | _ -> empty
-        ) params in
-        let trait_items = separate_map space (fun x -> break 1 ^^ x#p) items in
-        let all_declarations = self_type_decl ^^ additional_types ^^ trait_items in
-        let end_decl = break 1 ^^ string "end" in
-        header ^^ nest 2 all_declarations ^^ end_decl
+        empty
 
       method item'_TyAlias ~super:_ ~name:_ ~generics:_ ~ty:_ = (* NOT YET SEEN *)
         default_document_for "item'_TyAlias"
 
       method item'_Type_enum ~super:_ ~name ~generics ~variants =
-        let params = generics#v.params in
-        let type_params = 
-          if List.length params > 0 then
-            space ^^ 
-            separate_map space
-              (fun param ->
-                match param.kind with
-                  | GPType -> string "'" ^^ self#local_ident param.ident
-                  | GPLifetime _ -> string "'" ^^ self#local_ident param.ident
-                  | GPConst _ -> string "'_"
-              )
-              params
-          else
+        let type_params = List.filter_map generics#v.params
+          ~f:(fun p ->
+              match p.kind with
+              | GPType -> Some (String.lowercase p.ident.name)
+              | _ -> None
+          )
+        in          
+        let type_params_doc = 
+          if List.is_empty type_params then
             empty
+          else if List.length type_params = 1 then
+            string ("'" ^ (List.hd_exn type_params) ^ " ")
+          else
+            string "(" ^^ 
+            separate_map comma (fun name -> string ("'" ^ name)) type_params ^^ 
+            string ") "
+          in
+          let enum_name = (RenderId.render name#v).name in
+          string "type " ^^ type_params_doc ^^ string enum_name ^^ space ^^ equals ^^
+          nest 2 (break 1 ^^ string "|" ^^ space ^^ 
+                  separate_map (break 1 ^^ string "|" ^^ space) (fun v -> v#p) variants)
+
+      method item'_Type_struct ~super:_ ~name ~generics ~tuple_struct ~arguments =
+        let type_params = List.filter_map generics#v.params
+          ~f:(fun p ->
+              match p.kind with
+              | GPType -> Some (String.lowercase p.ident.name)
+              | _ -> None
+          )
+        in                  
+        let translate_type typ =
+          match typ#v with
+          | TParam ident ->
+            let param_name = String.lowercase ident.name in
+            if List.mem ~equal:String.equal type_params param_name then
+              string ("'" ^ param_name)
+            else
+              typ#p
+          | _ -> 
+            typ#p
+        in                  
+        let types = List.map 
+          ~f:(fun x ->
+                let snd_elem = match x with
+                | (_, s, _) -> translate_type s
+                in snd_elem
+              ) arguments
+        in                  
+        let trimmed_var_name_str = (RenderId.render name#v).name
         in
-        string "type" ^^ type_params ^^ space ^^ name#p ^^ space ^^ equals ^^
-        nest 2 (break 1 ^^ string "|" ^^ space ^^ 
-                separate_map (break 1 ^^ string "|" ^^ space) (fun x -> x#p) variants)
-
-      method item'_Type_struct ~super:_ ~name ~generics ~tuple_struct
-      ~arguments =
-        let types = List.map ~f:(
-          fun x ->
-            let snd_elem = match x with
-              | (_, s, _) -> s#p
-            in snd_elem) arguments
+        let trimmed_name_str =
+          String.sub trimmed_var_name_str 2 (String.length trimmed_var_name_str - 2)
+        in
+        let trimmed_name = string trimmed_name_str in
+        let trimmed_var_name = string (String.lowercase trimmed_var_name_str) in                  
+        let type_params_doc = 
+          if List.is_empty type_params then
+            empty
+          else if List.length type_params = 1 then
+            string ("'" ^ (List.hd_exn type_params) ^ " ")
+          else
+            string "(" ^^ 
+            separate_map comma (fun name -> string ("'" ^ name)) type_params ^^ 
+            string ") "
+        in        
+        match tuple_struct with
+        | true ->
+          let type_tuple_struct = if List.is_empty types then string "()"
+          else parens (separate (space ^^ star ^^ space) types)
           in
-          let trimmed_name_str = 
-            (RenderId.render name#v).name
+          string "type " ^^ type_params_doc ^^ trimmed_var_name ^^ space ^^ equals ^^ space
+          ^^ trimmed_name ^^ space ^^ string "of" ^^ space ^^ type_tuple_struct
+        | false ->
+          let idents = List.map 
+            ~f:(fun x -> 
+              let first_elem = match x with
+                | (f, _, _) ->  string ((RenderId.render f#v).name)
+              in first_elem
+            ) arguments
           in
-          let trimmed_var_name_str =
-            String.make 1 (Char.lowercase (String.get trimmed_name_str 0))
-            ^ String.sub trimmed_name_str 1 (String.length trimmed_name_str - 1)
-          in
-          let trimmed_name = string trimmed_name_str in
-          let trimmed_var_name = string trimmed_var_name_str in
-          match tuple_struct with
-          | true ->
-            string "type" ^^ space ^^ trimmed_var_name ^^ space ^^ equals ^^ space
-            ^^ trimmed_name ^^ space ^^ string "of" ^^ space ^^ separate (space ^^ star ^^ space) types
-          | false ->
-            let idents = List.map ~f:(
-              fun x -> 
-                let first_elem = match x with
-                  | (f, _, _) ->  string ((RenderId.render f#v).name)
-                in first_elem) arguments
-            in
-            let field_definitions = 
-              match List.map2 ~f:(fun id typ -> nest 2 (break 1 ^^ id ^^ string ": " ^^ typ ^^ semi)) idents types with
-              | Ok result -> 
-                string "type" ^^ space ^^ trimmed_name ^^ space ^^ equals ^^ space ^^ lbrace ^^
-                concat result ^^ break 1 ^^ rbrace
-              | Unequal_lengths -> string "GG"
-            in 
-            field_definitions
-
+          let field_definitions = 
+            match List.map2 ~f:(fun id typ -> nest 2 (break 1 ^^ id ^^ string ": " ^^ typ ^^ semi)) idents types with
+            | Ok result -> 
+              string "type " ^^ type_params_doc ^^ trimmed_var_name ^^ space ^^ equals ^^ space ^^ lbrace ^^
+              concat result ^^ break 1 ^^ rbrace
+            | Unequal_lengths -> string "GG"
+          in 
+          field_definitions
+            
       method item'_Use ~super:_ ~path ~is_external ~rename:_ =
         if List.length path = 0 || is_external then empty
         else
@@ -788,7 +899,7 @@ struct
               empty
             else string ".of_int" ^^ space
           in
-        sign_doc ^^ size_doc ^^ suffix_doc ^^ (if negative then !^"-" else empty) ^^ string value
+        sign_doc ^^ size_doc ^^ suffix_doc ^^ (if negative then parens (!^"-" ^^ string value) else string value) 
 
       method literal_String x1 = string "\"" ^^ string x1 ^^ string "\""
 
@@ -811,9 +922,14 @@ struct
       method modul x1 = separate_map (break 1) (fun x -> x#p) x1
 
       method param ~pat ~typ ~typ_span:_ ~attrs:_ =
-        string "~" ^^ parens (pat#p ^^ string ": " ^^ typ#p)
+        match typ#v with
+        | TApp { ident = `Concrete con_ident; args } ->
+          let con_ident_name_str = (RenderId.render con_ident).name in
+          parens (pat#p ^^ string ":" ^^ space ^^ string (String.lowercase con_ident_name_str))
+        | _ -> parens (pat#p ^^ string ": " ^^ typ#p)
+        
 
-      method pat ~p ~span:_ ~typ:_ = p#p
+      method pat ~p ~span:_ ~typ = p#p
 
       method pat'_PAscription ~super:_ ~typ ~typ_span:_ ~pat =
         pat#p ^^ string " : " ^^ typ#p
@@ -873,19 +989,8 @@ struct
         separate_map space (fun x -> x#p) args ^^ space ^^ colon ^^ space ^^ trait#p
 
       (* Minimal generics-support; hard to express generics. *)
-      method trait_item ~ti_span ~ti_generics ~ti_v ~ti_ident
-          ~ti_attrs = 
-        let item_type_doc =
-          match ti_v#v with
-          | TIFn _ ->
-            string "val" ^^ space ^^ ti_ident#p ^^ space ^^ colon ^^ space ^^ ti_v#p
-          | TIType _ ->
-            (* Assuming that ALL 'self'-types are called 'v_Self'... *)
-            string "module" ^^ ti_v#p ^^ space ^^ string "with type v_Self" ^^ space ^^ equals ^^ space ^^ string "v_Self"
-          | TIDefault _ ->
-            string "Trait item default should be disabled."
-          | _ -> string "Something unexpected happened!"
-        in item_type_doc
+      method trait_item ~ti_span ~ti_generics ~ti_v ~ti_ident ~ti_attrs = 
+        empty
 
       method trait_item'_TIDefault ~params:_ ~body:_ ~witness:_ =
         default_document_for "trait_item'_TIDefault"
@@ -937,7 +1042,7 @@ struct
       method ty_TParam x1 = 
         let name = x1#v.name in
         if String.equal (String.lowercase name) "self" then
-          string "t"
+          string ("'" ^ String.lowercase name)
         else
           string (String.lowercase name)
 
