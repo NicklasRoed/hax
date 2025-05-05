@@ -11,12 +11,10 @@ include
       include On.Monadic_binding
       include On.Macro
       include On.Construct_base
-   (* include On.For_loop
-      include On.While_loop
-      include On.For_index_loop
+
+      include On.Loop
+      include On.For_loop
       include On.State_passing_loop
-      include On.Fold_like_loop
-      include On.Loop *)
     end)
     (struct
       let backend = Diagnostics.Backend.Ocaml
@@ -45,12 +43,13 @@ module SubtypeToInputLanguage
              and type match_guard = Features.Off.match_guard
              and type trait_item_default = Features.Off.trait_item_default
              and type unsafe = Features.Off.unsafe
-             and type loop = Features.Off.loop
-             and type for_loop = Features.Off.for_loop
+             and type loop = Features.On.loop
+             and type for_loop = Features.On.for_loop
              and type while_loop = Features.Off.while_loop
              and type for_index_loop = Features.Off.for_index_loop
-             and type state_passing_loop = Features.Off.state_passing_loop
-             and type fold_like_loop = Features.Off.fold_like_loop) =
+             and type state_passing_loop = Features.On.state_passing_loop
+             and type fold_like_loop = Features.Off.fold_like_loop
+           ) =
 struct
   module FB = InputLanguage
 
@@ -64,12 +63,9 @@ struct
         include Features.SUBTYPE.On.Construct_base
         include Features.SUBTYPE.On.Slice
         include Features.SUBTYPE.On.Macro
-     (* include Features.SUBTYPE.On.Loop 
+        include Features.SUBTYPE.On.Loop
         include Features.SUBTYPE.On.For_loop
-        include Features.SUBTYPE.On.While_loop
-        include Features.SUBTYPE.On.For_index_loop
         include Features.SUBTYPE.On.State_passing_loop
-        include Features.SUBTYPE.On.Fold_like_loop *)
       end)
 
   let metadata = Phase_utils.Metadata.make (Reject (NotInBackendLang backend))
@@ -195,37 +191,46 @@ struct
               let binary_arg2 = List.nth_exn args 1 in
               (match (binary_arg1#v.typ, binary_arg2#v.typ) with
                 | (TInt {size; signedness}, _) | (_, TInt {size; signedness}) ->
-                  let is_arch = false in 
-                  let sign = match signedness with
-                    | Signed -> string "Int"
-                    | Unsigned -> string "Uint"
-                  in
-                  let int_op = match op with
+                  let is_arch = ref false in 
+                  let int_size = match size with
+                  | SSize -> 
+                    is_arch := true;
+                    parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p
+                  | S8 ->
+                    string "8"
+                  | S16 ->
+                    string "16"
+                  | S32 ->
+                    string "32"
+                  | S64 ->
+                    string "64"
+                  | S128 ->
+                    string "128"
+                in
+                let sign = match signedness with
+                  | Signed -> 
+                    if !is_arch then
+                      empty
+                    else string "Int"
+                  | Unsigned -> 
+                    if !is_arch then
+                      empty
+                    else string "Uint"
+                in
+                let int_op = match op with
                   | "+" | "-" | "*" | "/" ->
                     string "." ^^ parens (parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p)
                   | "=" | "<" | "<=" | ">" | ">=" | "<>" ->
-                    string ".compare" ^^ space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p ^^ space ^^
-                    string op ^^ space ^^ string "0"
+                    if !is_arch == false then
+                      string ".compare" ^^ space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p ^^ space ^^
+                      string op ^^ space ^^ string "0"
+                    else 
+                      parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p
                   | "mod" ->
                     string ".rem" ^^ space ^^ parens binary_arg1#p ^^ parens binary_arg2#p
                   | _ -> string "What"
                   in
-                  let int_size = match size with
-                    | SSize -> 
-                      let is_arch = true in
-                      parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p
-                    | S8 ->
-                      string "8"
-                    | S16 ->
-                      string "16"
-                    | S32 ->
-                      string "32"
-                    | S64 ->
-                      string "64"
-                    | S128 ->
-                      string "128"
-                  in
-                  if is_arch == true then int_size
+                  if !is_arch == true then int_size
                   else sign ^^ int_size ^^ int_op
                 | _ ->
                   if String.equal "Array.get" op then
@@ -244,14 +249,19 @@ struct
        let rendered = RenderId.render field#v in
        e#p ^^ string "." ^^ string rendered.name
       
-      (* TODO: Implement for cases where nth > 2. *)
+      (* We experience a problem, where size is always 0. *)
       method expr'_App_tuple_projection ~super ~size ~nth ~e = 
-        let prefix_doc =
-          match nth with
-          | 0 -> string "fst"
-          | 1 -> string "snd"
-          | _ -> string "Unsupported for tuples of size > 2."
-        in prefix_doc ^^ space ^^ e#p
+        match (size, nth) with
+        | (2, 0) -> string "fst" ^^ space ^^ e#p
+        | (2, 1) -> string "snd" ^^ space ^^ e#p
+        | (_, _) ->
+            string "(match" ^^ space ^^ e#p ^^ space ^^ string "with" ^^ break 1 ^^
+            string "|" ^^ space ^^ 
+            let pattern = 
+              separate (comma ^^ space) (List.init size (fun i -> 
+                if i = nth then string "x" else string "_")) 
+            in
+            parens pattern ^^ space ^^ string "->" ^^ space ^^ string "x" ^^ string ")"
 
       method expr'_Ascription ~super:_ ~e ~typ =
         e#p ^^ string " : " ^^ typ#p
@@ -399,14 +409,21 @@ struct
 
       method expr'_Literal ~super:_ x2 = x2#p
       method expr'_LocalVar ~super:_ x2 = x2#p
-
-      (** Purely functional or just the for-loop equivalent? **)
-      method expr'_Loop ~super:_ ~body:_ ~kind:_ ~state:_ ~control_flow:_
-          ~label:_ ~witness:_ = (* NOT YET SEEN *)
-        default_document_for "expr'_Loop"
+      
+      method expr'_Loop ~super:_ ~body ~kind ~state ~control_flow:_ ~label:_ ~witness:_ =
+        let combined = match state with
+          | Some state_doc -> state_doc#p ^^ kind#p
+          | None -> kind#p
+        in
+        let ending = 
+          match kind#v with
+          | UnconditionalLoop | WhileLoop _ | ForIndexLoop _ -> string "done"
+          | ForLoop _ -> empty
+        in
+        combined ^^ body#p ^^ break 1 ^^ ending
+        
 
       method expr'_MacroInvokation ~super:_ ~macro:_ ~args:_ ~witness:_ =
-        (* NOT YET SEEN *)
         default_document_for "expr'_MacroInvokation"
 
       method expr'_Match ~super:_ ~scrutinee ~arms =
@@ -422,12 +439,12 @@ struct
       method expr'_Return ~super:_ ~e:_ ~witness:_ =
         default_document_for "expr'_Return"
 
-      method field_pat ~field:_ ~pat = pat#p (* NOT YET SEEN *)
+      method field_pat ~field:_ ~pat = pat#p
 
       method generic_constraint_GCLifetime _x1 _x2 =
         default_document_for "generic_constraint_GCLifetime"
 
-      method generic_constraint_GCProjection _x1 = (* NOT YET SEEN *)
+      method generic_constraint_GCProjection _x1 = 
         default_document_for "generic_constraint_GCProjection"
 
       method generic_constraint_GCType x1 =
@@ -435,10 +452,6 @@ struct
 
       method generic_param ~ident ~span:_ ~attrs:_ ~kind =
         kind#p ^^ string (String.lowercase ident#v.name)
-        (* match kind#v with
-        | GPType _ ->
-          string ("'" ^ String.lowercase (ident#v.name))
-        | _ -> string "lol" *)
 
       method generic_param_kind_GPConst ~typ =
         default_document_for "generic_param_kind_GPConst"
@@ -547,92 +560,23 @@ struct
               name#p ^^ space ^^ string "of" ^^ space ^^ separate_map (space ^^ star ^^ space) (fun x -> x#p) record_types
 
       method item'_Fn ~super ~name ~generics ~body ~params ~safety:_ =
+        let is_rec =
+          Set.mem
+            (U.Reducers.collect_concrete_idents#visit_expr () body#v)
+            name#v
+        in
+        let rec_header = 
+          if is_rec then string "rec" ^^ space else empty
+        in
         let _, g_params, g_constraints = generics#v in
-        let id_count = ref 0 in
-        let tparam_id_counts = 
-          List.iter g_params ~f:(
-            fun _ -> incr id_count
-        )
-        in
-        let constraints_to_params =
-          List.concat_map g_constraints ~f:(fun const ->
-            match const#v with
-            | GCType { goal = { trait; args }; name } ->
-              List.map args ~f:(fun arg ->
-                match arg with
-                | GType (TParam local_id) ->
-                  let () = id_count := !id_count + 1 in
-                  let new_id = string_of_int !id_count in
-                  let new_var_name = name in
-                  let new_local_ident_var = 
-                     Local_ident.{ name = new_var_name; id = mk_id Expr !id_count }                
-                  in
-                  let () = id_count := !id_count + 1 in
-                  let new_typ_id = string_of_int !id_count in
-                  let new_typ_name = 
-                    "'" ^ local_id.name ^ " " 
-                    ^ (RenderId.render trait).name
-                  in
-                  let new_local_ident_typ =
-                    Local_ident.{ name = new_typ_name; id = mk_id Typ !id_count }
-                  in
-                  {
-                    pat = {
-                      p = PBinding {
-                        mut = Immutable;
-                        mode = ByValue;
-                        var = new_local_ident_var;
-                        typ = TParam new_local_ident_typ;
-                        subpat = None;
-                      };
-                      span = Span.dummy ();
-                      typ = TParam new_local_ident_typ;
-                    };
-                    typ = TParam new_local_ident_typ;
-                    typ_span = None;
-                    attrs = [];
-                  }
-                | _ -> (List.hd_exn params)#v
-              )
-            | _ -> List.map params ~f:(fun x -> x#v)
-          )
-        in
-        let const_params_to_doc = List.map constraints_to_params ~f:(
-          fun x -> self#_do_not_override_lazy_of_param AstPos_param__typ x
-        )
-        in
-        let params = params @ const_params_to_doc in
         let typ =
           self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body body#v.typ
         in
         let header = 
-          string "let" ^^ space ^^ name#p ^^ space ^^ separate_map space (fun x -> x#p) params
+          string "let" ^^ space ^^ rec_header ^^ name#p ^^ space ^^ separate_map space (fun x -> x#p) params
           ^^ space ^^ colon ^^ space ^^ typ#p ^^ space ^^ equals
         in
-        let rec get_app_traits expr =
-          let handle_concrete_x x trait =
-            match trait with
-            | Some ( {kind = LocalBound { id }; goal},  _) ->
-              Some id, GlobalVar (`Projector (`Concrete x))
-            | None -> 
-              None, GlobalVar (`Concrete x)
-          in
-          match expr.e with
-          | App {f = {e = GlobalVar (`Concrete x); _} as f_expr; args; generic_args; bounds_impls; trait = app_trait} -> 
-              let new_e = handle_concrete_x x app_trait in
-              let new_f = { f_expr with e = new_e } in
-              { expr with e = App {f = new_f; args; generic_args; bounds_impls; trait = app_trait} }
-          | Let { monadic; lhs; rhs = { e = App {f = {e = GlobalVar (`Concrete x); _} as f_expr; args; generic_args; bounds_impls; trait}; span; typ } as rhs; 
-                  body = let_body; } -> 
-              let new_e = handle_concrete_x x trait in
-              let new_f = { f_expr with e = new_e } in
-              let new_app = App {f = new_f; args; generic_args; bounds_impls; trait} in
-              let new_rhs = { rhs with e = new_app } in
-              let processed_body = get_app_traits let_body in
-              { expr with e = Let { monadic; lhs; rhs = new_rhs; body = processed_body; } }
-          | _ -> expr
-        in
-        header ^^ nest 2 (break 1 ^^  (self#_do_not_override_lazy_of_expr AstPos_expr__e (get_app_traits body#v))#p)
+        header ^^ nest 2 (break 1 ^^ body#p)
     
       method item'_HaxError ~super:_ _x2 = default_document_for "item'_HaxError"
 
@@ -641,84 +585,37 @@ struct
         default_document_for "item'_IMacroInvokation"
 
       method item'_Impl ~super:_ ~generics ~self_ty ~of_trait ~items ~parent_bounds:_ ~safety:_ =
-        (* let trait_tuple = of_trait#v in
-        let trait_name = fst trait_tuple in
-        let trait_args = snd trait_tuple in
-          let impl_name = match self_ty#v with
-            | TApp { ident; _ } -> 
-                let type_name = match ident with
-                  | `Concrete id -> (RenderId.render id).name
-                  | _ -> "UnknownType"
-                in
-                string (type_name ^ "_" ^ (RenderId.render trait_name#v).name)
-            | _ -> string ("Impl_" ^ (RenderId.render trait_name#v).name)
-          in
-          let trait_module_type = string (RenderId.render trait_name#v).name in
-          let _, params, _ = generics#v in
-          let header = string "module" ^^ space ^^ impl_name ^^ space ^^ 
-                       colon ^^ space ^^ trait_module_type ^^ 
-                       string " with type v_Self =" ^^ space ^^ self_ty#p ^^ 
-                       space ^^ equals ^^ space ^^ string "struct" in
-          let type_decl = string "type v_Self =" ^^ space ^^ self_ty#p in
-          let impl_items = List.filter_map ~f:(fun item ->
-            match item#v with
-            | { ii_v = IIFn { body; params }; ii_ident; _ } ->
-              let expr = 
-                self#_do_not_override_lazy_of_expr 
-                AstPos_expr'_App_f body 
-              in
-              Some (string "let" ^^ space ^^ string (RenderId.render ii_ident).name ^^ space ^^ 
-                      string "v_self" ^^ space ^^ equals ^^ space ^^ expr#p)
-            | { ii_v = IIType { typ; _ }; ii_ident; _ } ->
-              let ty = self#_do_not_override_lazy_of_ty AstPos_item'_Fn_body typ in
-              Some (string "type" ^^ space ^^ string (RenderId.render ii_ident).name ^^ space ^^ 
-                    equals ^^ space ^^ ty#p)
-                      
-            | _ -> None
-          ) items in
-          let end_decl = string "end" in
-          group (
-            header ^^ nest 2 (break 1 ^^
-            type_decl ^^ break 1 ^^
-            separate (break 1) impl_items) ^^ break 1 ^^
-            end_decl
-          ) *)
         let _, params, constraints = generics#v in
         let trait_tuple = of_trait#v in
         let trait_name = fst trait_tuple in
+        let fix_self_ty = 
+          match self_ty#v with
+          | TInt x -> string (show_int_kind x)
+          | _ -> self_ty#p
+        in
+        let fn_name_prefix_str = string (RenderId.render trait_name#v).name ^^ underscore ^^ fix_self_ty in
         let lowercase_trait_args trait_arg =
           match trait_arg#v with
           | GType (TApp { ident = `Concrete con_ident; args }) ->
             let con_ident_name_str = (RenderId.render con_ident).name in
-            String.lowercase con_ident_name_str
-          | _ -> "Not expected type"
+            string (String.lowercase con_ident_name_str)
+          | GType x -> (self#_do_not_override_lazy_of_ty AstPos_param__typ x)#p
         in
         let trait_args = List.map (snd trait_tuple) ~f:lowercase_trait_args
         in
-        let impl_name = match self_ty#v with
-          | TApp { ident; args } -> 
-            (match ident with
-            | `Concrete id -> 
-              string (RenderId.render trait_name#v).name
-            | _ -> string "UnknownType")
-          | _ -> string "lol"
+        let item_to_doc item =
+          match item#v with
+          | { ii_v = IIFn {body; params}; ii_ident; _ } ->
+            string "let" ^^ space ^^ fn_name_prefix_str ^^ underscore ^^ string ((RenderId.render ii_ident).name)
+            ^^ space ^^ separate_map space (fun x -> (self#_do_not_override_lazy_of_param AstPos_param__typ x)#p) params ^^ space ^^ colon
+            ^^ space ^^ (self#_do_not_override_lazy_of_ty AstPos_expr__e body.typ)#p ^^ space ^^ equals ^^
+            nest 2 (break 1 ^^ (self#_do_not_override_lazy_of_expr AstPos_expr__e body)#p)
+          | _ -> empty
+
         in
-        let header = string "let" ^^ space ^^ trait_name#p ^^ (List.hd_exn (snd trait_tuple))#p ^^ space
-                     ^^ colon ^^ space ^^ parens (separate_map (comma ^^ space) (fun x -> string x) trait_args) ^^ space ^^
-                      string (String.lowercase ((RenderId.render trait_name#v).name)) ^^ space ^^ equals ^^ space ^^ lbrace
+        let items_doc = List.map items ~f:item_to_doc
         in
-        let unwrapped_items = List.map items ~f:(fun x -> x#v) in
-        let fn_to_closure item_lst =
-          List.map item_lst ~f:(
-            fun item ->
-              match item with
-              | { ii_v = IIFn { body; params }; ii_ident; _ } ->
-                string ((RenderId.render ii_ident).name) ^^ space ^^ equals ^^ space ^^ parens (string "fun" ^^ space ^^ separate_map space (fun x -> (self#_do_not_override_lazy_of_param AstPos_param__typ x)#p) params ^^
-                space ^^ string "->" ^^ nest 2 (break 1 ^^ space ^^ (self#_do_not_override_lazy_of_expr AstPos_expr__e body)#p))
-              | _ -> string "Something bad happened.")
-        in
-        let processed_items = fn_to_closure unwrapped_items in
-        header ^^ nest 2 (break 1 ^^ separate space processed_items) ^^ break 1 ^^ rbrace
+        separate ((break 1) ^^ (break 1)) items_doc
 
       method item'_NotImplementedYet =
         string "(* Not Implemented Yet *)"
@@ -903,21 +800,26 @@ struct
 
       method literal_String x1 = string "\"" ^^ string x1 ^^ string "\""
 
-      method loop_kind_ForIndexLoop ~start:_ ~end_:_ ~var:_ ~var_typ:_
-          ~witness:_ =
-        default_document_for "loop_kind_ForIndexLoop"
+      method loop_kind_ForIndexLoop ~start ~end_ ~var ~var_typ:_ ~witness:_ =
+        string "for" ^^ space ^^ var#p ^^ space ^^ string "=" ^^ space ^^ 
+        start#p ^^ space ^^ string "to" ^^ space ^^ end_#p ^^ space ^^ string "do" ^^ break 1
 
-      method loop_kind_ForLoop ~pat:_ ~it:_ ~witness:_ = (* NOT YET SEEN *)
-        default_document_for "loop_kind_ForLoop"
+      method loop_kind_ForLoop ~pat ~it ~witness:_ =
+        string "Seq.iter" ^^ space ^^ 
+        string "(fun" ^^ space ^^ pat#p ^^ space ^^ string "->" ^^ break 1 ^^
+        string ")" ^^ space ^^ it#p
 
-      method loop_kind_UnconditionalLoop = 
-        default_document_for "loop_kind_UnconditionalLoop"
+      method loop_kind_UnconditionalLoop =
+        string "while true do" ^^ break 1
 
-      method loop_kind_WhileLoop ~condition:_ ~witness:_ =
-        default_document_for "loop_kind_WhileLoop"
+      method loop_kind_WhileLoop ~condition ~witness:_ =
+        string "while" ^^ space ^^ condition#p ^^ space ^^ string "do" ^^ break 1
 
-      method loop_state ~init:_ ~bpat:_ ~witness:_ = (* NOT YET SEEN *)
-        default_document_for "loop_state"
+      method loop_state ~init ~bpat ~witness:_ = 
+        let init_doc = init#p in
+        let pat_doc = bpat#p in
+        string "let mutable" ^^ space ^^ pat_doc ^^ space ^^ equals ^^ 
+        space ^^ init_doc ^^ space ^^ string "in" ^^ break 1
 
       method modul x1 = separate_map (break 1) (fun x -> x#p) x1
 
@@ -988,7 +890,6 @@ struct
       method trait_goal ~trait ~args =
         separate_map space (fun x -> x#p) args ^^ space ^^ colon ^^ space ^^ trait#p
 
-      (* Minimal generics-support; hard to express generics. *)
       method trait_item ~ti_span ~ti_generics ~ti_v ~ti_ident ~ti_attrs = 
         empty
 
@@ -1056,81 +957,83 @@ struct
       (* END GENERATED *)
     end
 
-  let new_printer : BasePrinter.finalized_printer =
-    BasePrinter.finalize (fun () -> (new printer :> BasePrinter.printer))
-end
-
-module type S = sig
-  val new_printer : BasePrinter.finalized_printer
-end
-
-let make (module M : Attrs.WITH_ITEMS) =
-  let open (
-    Make
-      (struct
-        let default x = x
-      end)
-      (M) :
-      S) in
-  new_printer
-
-let translate m _ ~bundles:_ (items : AST.item list) : Types.file list =
-  let my_printer = make m in
-  U.group_items_by_namespace items
-  |> Map.to_alist
-  |> List.filter_map ~f:(fun (_, items) ->
-         let* first_item = List.hd items in
-         Some ((RenderId.render first_item.ident).path, items))
-  |> List.map ~f:(fun (ns, items) ->
-         let mod_name =
-           String.concat ~sep:"_"
-             (List.map ~f:(map_first_letter String.uppercase) ns)
-         in
-         let sourcemap, contents =
-           let annotated = my_printer#entrypoint_modul items in
-           let open Generic_printer.AnnotatedString in
-           let header = pure (hardcoded_ocaml_headers ^ "\n") in
-           let annotated = concat header annotated in
-           (to_sourcemap annotated, to_string annotated)
-         in
-         let sourcemap = Some sourcemap in
-         let path = mod_name ^ ".ml" in
-         Types.{ path; contents; sourcemap })
-
-open Phase_utils
-
-module TransformToInputLanguage =
-  [%functor_application
-  Phases.Reject.Unsafe(Features.Rust)
-  |> Phases.Reject.RawOrMutPointer
-  |> Phases.And_mut_defsite
-  |> Phases.Reconstruct_asserts
-  |> Phases.Reconstruct_for_loops
-  |> Phases.Direct_and_mut
-  |> Phases.Reject.Arbitrary_lhs
-  |> Phases.Drop_blocks
-  |> Phases.Drop_match_guards
-  |> Phases.Reject.Continue
-  |> Phases.Drop_references
-  |> Phases.Trivialize_assign_lhs
-  |> Phases.Reconstruct_question_marks
-  (* |> Side_effect_utils.Hoist *)
-  |> Phases.Local_mutation (**)
-  |> Phases.Reject.Continue
-  |> Phases.Cf_into_monads
-  |> Phases.Reject.EarlyExit
-  |> Phases.Functionalize_loops
-  |> Phases.Reject.As_pattern
-  |> Phases.Reject.Dyn
-  |> Phases.Reject.Trait_item_default
-  (* |> Phases.Bundle_cycles *)(**)
-  |> Phases.Sort_items
-  |> SubtypeToInputLanguage
-  |> Identity
-  ]
-  [@ocamlformat "disable"] 
-
-
-let apply_phases (_bo : BackendOptions.t) (items : Ast.Rust.item list) :
-    AST.item list =
-  TransformToInputLanguage.ditems items
+    let new_printer : BasePrinter.finalized_printer =
+      BasePrinter.finalize (fun () -> (new printer :> BasePrinter.printer))
+  end
+  
+  module type S = sig
+    val new_printer : BasePrinter.finalized_printer
+  end
+  
+  let make (module M : Attrs.WITH_ITEMS) =
+    let open (
+      Make
+        (struct
+          let default x = x
+        end)
+        (M) :
+        S) in
+    new_printer
+  
+  let translate m _ ~bundles:_ (items : AST.item list) : Types.file list =
+    let my_printer = make m in
+    U.group_items_by_namespace items
+    |> Map.to_alist
+    |> List.filter_map ~f:(fun (_, items) ->
+           let* first_item = List.hd items in
+           Some ((RenderId.render first_item.ident).path, items))
+    |> List.map ~f:(fun (ns, items) ->
+           let mod_name =
+             String.concat ~sep:"_"
+               (List.map ~f:(map_first_letter String.uppercase) ns)
+           in
+           let sourcemap, contents =
+             let annotated = my_printer#entrypoint_modul items in
+             let open Generic_printer.AnnotatedString in
+             let header = pure (hardcoded_ocaml_headers ^ "\n") in
+             let annotated = concat header annotated in
+             (to_sourcemap annotated, to_string annotated)
+           in
+           let sourcemap = Some sourcemap in
+           let path = mod_name ^ ".ml" in
+           Types.{ path; contents; sourcemap })
+  
+  open Phase_utils
+  
+  module TransformToInputLanguage =
+    [%functor_application
+    Phases.Reject.Unsafe(Features.Rust)
+    |> Phases.Reject.RawOrMutPointer
+    |> Phases.And_mut_defsite
+    |> Phases.Reconstruct_asserts
+    |> Phases.Reconstruct_for_loops
+    |> Phases.Direct_and_mut
+    |> Phases.Reject.Arbitrary_lhs
+    |> Phases.Drop_blocks
+    |> Phases.Drop_match_guards
+    |> Phases.Reject.Continue
+    |> Phases.Drop_references
+    |> Phases.Trivialize_assign_lhs
+    |> Phases.Reconstruct_question_marks
+    (* |> Side_effect_utils.Hoist *)
+    |> Phases.Local_mutation (**)
+    |> Phases.Reject.Continue
+    |> Phases.Cf_into_monads
+    |> Phases.Reject.EarlyExit
+    (* |> Phases.Functionalize_loops *)
+    |> Phases.Reject.As_pattern
+    |> Phases.Reject.Dyn
+    |> Phases.Reject.Trait_item_default
+    (* |> Phases.Bundle_cycles *)(**)
+    |> Phases.Sort_items
+    |> Phases.Resolve_generics
+    |> SubtypeToInputLanguage
+    |> Identity
+    ]
+    [@ocamlformat "disable"] 
+  
+  
+  let apply_phases (_bo : BackendOptions.t) (items : Ast.Rust.item list) :
+      AST.item list =
+    TransformToInputLanguage.ditems items
+  

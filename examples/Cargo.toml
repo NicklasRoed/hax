@@ -8,7 +8,7 @@ members = [
     "proverif-psk",
     "coq-example",
     "ocamltest",
-    "coverage"]
+    "coverage", "translations"]
 resolver = "2"
 
 [workspace.dependencies]
