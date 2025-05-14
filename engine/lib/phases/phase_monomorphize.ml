@@ -50,17 +50,31 @@ module%inlined_contents Make (FA : Features.T) = struct
         List.map
           ~f:
             (rename_trait_impl_calls (fun _typ ident ->
-                 ident (* change name here *)))
+                 Concrete_ident.map_path_strings ~f:(fun x -> x ^ "_typ") ident)
+            )
           items
       in
       List.bind items ~f:(fun x ->
-          match x.v with
-          | Impl _ -> []
+        match x.v with
+        | Impl { generics; self_ty; of_trait; items = impl_items; safety; _ } ->
+          List.concat_map impl_items ~f:(fun impl_item ->
+            match impl_item.ii_v with
+            | IIFn { body; params } -> 
+              [B.Fn {
+                name = impl_item.ii_ident;
+                generics = dgenerics impl_item.ii_span impl_item.ii_generics;
+                body = body;
+                params = params;
+                safety;
+              }]
+            | _ -> [])
           | Trait _ -> []
-          | _ -> [ Stdlib.Obj.magic x ])
+          | _ -> [ Stdlib.Obj.magic x ]
+      )
 
     let dexpr (_e : A.expr) : B.expr =
       Stdlib.failwith "Should not be called directly"
+
   end
 
   include Implem
