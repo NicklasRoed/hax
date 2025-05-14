@@ -43,6 +43,7 @@ module SubtypeToInputLanguage
              and type match_guard = Features.Off.match_guard
              and type trait_item_default = Features.Off.trait_item_default
              and type unsafe = Features.Off.unsafe
+             and type trait_impls = Features.Off.trait_impls
              and type loop = Features.On.loop
              and type for_loop = Features.On.for_loop
              and type while_loop = Features.Off.while_loop
@@ -584,7 +585,7 @@ struct
           ~witness:_ =
         default_document_for "item'_IMacroInvokation"
 
-      method item'_Impl ~super:_ ~generics ~self_ty ~of_trait ~items ~parent_bounds:_ ~safety:_ =
+      method item'_Impl ~super:_ ~generics ~self_ty ~of_trait ~items ~parent_bounds:_ ~safety:_ ~witness:_ =
         let _, params, constraints = generics#v in
         let trait_tuple = of_trait#v in
         let trait_name = fst trait_tuple in
@@ -1016,6 +1017,7 @@ struct
     |> Phases.Trivialize_assign_lhs
     |> Phases.Reconstruct_question_marks
     (* |> Side_effect_utils.Hoist *)
+    |> Phases.Monomorphize
     |> Phases.Local_mutation (**)
     |> Phases.Reject.Continue
     |> Phases.Cf_into_monads
@@ -1026,7 +1028,6 @@ struct
     |> Phases.Reject.Trait_item_default
     (* |> Phases.Bundle_cycles *)(**)
     |> Phases.Sort_items
-    |> Phases.Resolve_generics
     |> SubtypeToInputLanguage
     |> Identity
     ]
