@@ -12,4 +12,4 @@ module Make (F : Features.T) : sig
   end
 
   include ImplemT.T
-end
+end 

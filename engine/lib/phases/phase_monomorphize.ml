@@ -25,7 +25,7 @@ module%inlined_contents Make (FA : Features.T) = struct
     module S = struct
       include Features.SUBTYPE.Id
     end
-
+    
     module UA = Ast_utils.Make (FA)
     module UB = Ast_utils.Make (FB)
 
@@ -42,35 +42,53 @@ module%inlined_contents Make (FA : Features.T) = struct
 
          method! visit_expr _ e = match e.e with _ -> super#visit_expr e.typ e
       end)
-        #visit_item
-        TBool (* Dummy value *)
+        #visit_item TBool (* Dummy value *)
 
+    let change_impl_calls (items : A.item list) =
+      List.map ~f:
+        (rename_trait_impl_calls (fun typ ident ->
+          Concrete_ident.map_path_strings ~f:(fun x -> x ^ "_typ") ident)
+        ) items
+
+    [%%inline_defs dmutability + dsafety_kind + dty]
+
+    [%%inline_defs "Item.*" - ditems - ditem']
+
+    let ditem' (span : span) (item : A.item') : B.item' =
+      match item with
+      | [%inline_arms "ditem'.*"] -> auto
+      | Impl _ ->
+        Stdlib.failwith "Shouldn't happen"
+    [@@inline_ands bindings_of ditem - ditem']
+        
     let ditems (items : A.item list) : B.item list =
-      let items =
-        List.map
-          ~f:
-            (rename_trait_impl_calls (fun _typ ident ->
-                 Concrete_ident.map_path_strings ~f:(fun x -> x ^ "_typ") ident)
-            )
-          items
-      in
-      List.bind items ~f:(fun x ->
+      let items = change_impl_calls items in
+      let outer_item_list = List.bind items ~f:(fun x ->
         match x.v with
-        | Impl { generics; self_ty; of_trait; items = impl_items; safety; _ } ->
-          List.concat_map impl_items ~f:(fun impl_item ->
+        | Impl { generics; self_ty; of_trait; items = impl_items; safety; witness; _ } ->
+          let inner_item_list = List.concat_map impl_items ~f:(fun impl_item ->
             match impl_item.ii_v with
-            | IIFn { body; params } -> 
-              [B.Fn {
-                name = impl_item.ii_ident;
-                generics = dgenerics impl_item.ii_span impl_item.ii_generics;
-                body = body;
-                params = params;
-                safety;
-              }]
-            | _ -> [])
-          | Trait _ -> []
-          | _ -> [ Stdlib.Obj.magic x ]
+            | IIFn { body; params } ->
+              let result_list = 
+                  [ditem { x with v = 
+                      A.Fn {
+                      name = impl_item.ii_ident;
+                      generics = impl_item.ii_generics;
+                      body = body;
+                      params = params;
+                      safety = safety;
+                  } 
+                }]
+              in
+              result_list
+            | _ -> []
+          ) in
+            inner_item_list
+        | Trait _ -> []
+        | _ -> []
       )
+      in
+      outer_item_list
 
     let dexpr (_e : A.expr) : B.expr =
       Stdlib.failwith "Should not be called directly"
