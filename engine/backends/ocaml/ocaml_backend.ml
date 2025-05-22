@@ -147,7 +147,8 @@ struct
             (c Core__ops__bit__BitXor__bitxor, (2, "lxor")); 
             (c Core__ops__bit__BitAnd__bitand, (2, "land")); 
             (c Core__ops__bit__BitOr__bitor, (2, "lor")); 
-            (c Core__ops__bit__Not__not, (1, "lnot")); 
+            (c Core__ops__bit__Not__not, (1, "lnot"));
+            (c Core__ops__arith__Neg__neg, (1, "-"));
             (c Core__ops__arith__Add__add, (2, "+")); 
             (c Core__ops__arith__Sub__sub, (2, "-")); 
             (c Core__ops__arith__Mul__mul, (2, "*")); 
@@ -254,6 +255,11 @@ struct
                   in
                   if !is_arch == true then int_size
                   else sign ^^ int_size ^^ int_op
+                | (TFloat _, _) | (_, TFloat _) | (_, TArrow (_, TFloat _)) | (TArrow (_, TFloat _), _) ->
+                  (match op with
+                      | "+" | "-" | "*" | "/" | "=" | "<" | "<=" | ">" | ">=" | "<>" ->
+                      parens binary_arg1#p ^^ space ^^ string op ^^ string "." ^^ space ^^ parens binary_arg2#p
+                      | _ -> string "What2")
                 | _ ->
                   if String.equal "Array.get" op then
                     string op ^^ space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p
@@ -740,7 +746,7 @@ struct
             | Unequal_lengths -> string "GG"
           in 
           field_definitions
-            
+
       method item'_Use ~super:_ ~path ~is_external ~rename:_ =
         if List.length path = 0 || is_external then empty
         else
