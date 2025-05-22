@@ -229,6 +229,27 @@ struct
                       parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p
                   | "mod" ->
                     string ".rem" ^^ space ^^ parens binary_arg1#p ^^ parens binary_arg2#p
+                  | "lsl" | "lsr" ->
+                    if !is_arch == false then
+                      string ".shift_" ^^ 
+                      (if String.equal op "lsl" then string "left" else string "right") ^^
+                      space ^^ parens binary_arg1#p ^^ space ^^ 
+                      (* Convert shift amount back to regular int using already computed sign and int_size *)
+                      string "(" ^^ sign ^^ int_size ^^ string ".to_int " ^^ 
+                      parens binary_arg2#p ^^ string ")"
+                    else 
+                      parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p
+                  | "land" | "lor" | "lxor" ->
+                    if !is_arch == false then
+                      string ".log" ^^
+                      (match op with
+                        | "land" -> string "and"
+                        | "lor" -> string "or" 
+                        | "lxor" -> string "xor"
+                        | _ -> string "unknown") ^^
+                      space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p
+                    else 
+                      parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p  
                   | _ -> string "What"
                   in
                   if !is_arch == true then int_size
