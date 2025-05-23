@@ -97,8 +97,41 @@ struct
   let default_string_for s = "TODO: please implement the method `" ^ s ^ "`"
   let default_document_for = default_string_for >> string
 
+  let doc_int_kind (typ: AST.ty) = 
+    match typ with
+    | TInt {size; signedness} ->
+      let is_arch = ref false in
+      let int_size = 
+        match size with 
+        | SSize ->
+            is_arch := true;
+            string "int"
+          | S8 -> 
+            string "8"
+          | S16 ->
+            string "16"
+          | S32 ->
+            string "32"
+          | S64 ->
+            string "64"
+          | S128 ->
+            string "128"
+        in
+        let int_sign = 
+          match signedness with
+          | Signed -> 
+            if !is_arch then
+              empty
+            else string "Int"
+          | Unsigned -> 
+            if !is_arch then
+              empty
+            else string "Uint" 
+        in int_sign ^^ int_size
+    | _ -> empty
+
   type ('get_span_data, 'a) object_type =
-    ('get_span_data, 'a) BasePrinter.Gen.object_type
+    ('get_span_data, 'a) BasePrinter.Gen.object_type  
 
   class printer =
     object (self)
@@ -196,35 +229,7 @@ struct
                     (** TODO: Refactor this behavior. 
                         In particular, isolate this logic in a function
                         that formats int_kinds as OCaml-like **)
-                    let is_arch = ref false in
-                    let int_size = 
-                      match size with
-                      | SSize ->
-                        is_arch := true;
-                        string op ^^ space ^^ parens unary_arg#p
-                      | S8 -> 
-                        string "8"
-                      | S16 ->
-                        string "16"
-                      | S32 ->
-                        string "32"
-                      | S64 ->
-                        string "64"
-                      | S128 ->
-                        string "128"
-                    in
-                    let int_sign = 
-                      match signedness with
-                      | Signed -> 
-                        if !is_arch then
-                          empty
-                        else string "Int"
-                      | Unsigned -> 
-                        if !is_arch then
-                          empty
-                        else string "Uint"
-                    in
-                    int_sign ^^ int_size ^^ string ".neg" ^^ space ^^ unary_arg#p
+                    doc_int_kind unary_arg#v.typ ^^ string ".neg" ^^ space ^^ unary_arg#p
                   | _ -> string op ^^ space ^^ parens unary_arg#p)
                 | _ -> string op ^^ space ^^ parens unary_arg#p)
             | 2 ->
@@ -450,14 +455,14 @@ struct
             match y1 with
             | [TInt {size = SSize; _} as h] -> 
               if y2_is_int == true then
-                self#entrypoint_ty y2 ^^ dot ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+                doc_int_kind y2 ^^ dot ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
               else
                 self#entrypoint_ty y2 ^^ underscore ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
             | [TInt _ as h] ->
-              self#entrypoint_ty h ^^ dot ^^ string "to" ^^ underscore ^^ self#entrypoint_ty y2
+              doc_int_kind h ^^ dot ^^ string "to" ^^ underscore ^^ self#entrypoint_ty y2
             | h :: [] ->
               if y2_is_int == true then
-                self#entrypoint_ty y2 ^^ dot ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+                doc_int_kind y2 ^^ dot ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
               else 
                 self#entrypoint_ty y2 ^^ underscore ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
             | _ -> string "This should never happen"
