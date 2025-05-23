@@ -192,6 +192,39 @@ struct
                   (match unary_arg#v.typ with
                   | TFloat _ ->
                     string op ^^ string "." ^^ space ^^ parens unary_arg#p
+                  | TInt {size; signedness} ->
+                    (** TODO: Refactor this behavior. 
+                        In particular, isolate this logic in a function
+                        that formats int_kinds as OCaml-like **)
+                    let is_arch = ref false in
+                    let int_size = 
+                      match size with
+                      | SSize ->
+                        is_arch := true;
+                        string op ^^ space ^^ parens unary_arg#p
+                      | S8 -> 
+                        string "8"
+                      | S16 ->
+                        string "16"
+                      | S32 ->
+                        string "32"
+                      | S64 ->
+                        string "64"
+                      | S128 ->
+                        string "128"
+                    in
+                    let int_sign = 
+                      match signedness with
+                      | Signed -> 
+                        if !is_arch then
+                          empty
+                        else string "Int"
+                      | Unsigned -> 
+                        if !is_arch then
+                          empty
+                        else string "Uint"
+                    in
+                    int_sign ^^ int_size ^^ string ".neg" ^^ space ^^ unary_arg#p
                   | _ -> string op ^^ space ^^ parens unary_arg#p)
                 | _ -> string op ^^ space ^^ parens unary_arg#p)
             | 2 ->
