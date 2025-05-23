@@ -19,6 +19,9 @@ module%inlined_contents Make (FA : Features.T) = struct
   module AVisitors = Ast_visitors.Make (FA)
   module BVisitors = Ast_visitors.Make (FB)
 
+  module OCamlNamePolicy = Concrete_ident.DefaultNamePolicy
+  module RenderId = Concrete_ident.MakeRenderAPI (OCamlNamePolicy)
+
   module Implem : ImplemT.T = struct
     let metadata = metadata
 
@@ -587,38 +590,39 @@ module%inlined_contents Make (FA : Features.T) = struct
       ) items
 
     
-  (* let ditems (items : A.item list) : B.item list =
-    (* let items = change_impl_calls items in *)
+  let ditems (items : A.item list) : B.item list =
+    let items = change_impl_calls items in
     let outer_item_list = List.bind items ~f:(fun x ->
       match x.v with
-      | Impl { items = impl_items; safety; _ } ->
-      let inner_item_list = List.concat_map impl_items ~f:(fun impl_item ->
+      | Impl (* { items = impl_items; safety; of_trait;_ } *) _ -> []
+      (* let inner_item_list = List.concat_map impl_items ~f:(fun impl_item ->
           match impl_item.ii_v with
           | IIFn { body; params } ->
+            let trait_name = (RenderId.render (fst of_trait)).name in
             let result_list = 
                 [ditem { x with v = 
                     A.Fn {
-                    name = impl_item.ii_ident;
+                    name = Concrete_ident.map_path_strings ~f:(fun x -> trait_name ^ "_" ^ x) impl_item.ii_ident;
                     generics = impl_item.ii_generics;
                     body = body;
                     params = params;
                     safety = safety;
                 };
                 ident =
-                  Concrete_ident.map_path_strings ~f:(fun x -> x) x.ident
+                  Concrete_ident.map_path_strings ~f:(fun x -> trait_name ^ "_" ^ x) impl_item.ii_ident
               }]
             in
-            result_list
+            result_list 
           | _ -> []
         ) in
-          inner_item_list
+          inner_item_list *)
       | Trait _ -> []
-      | _ -> []
+      | _ -> [ditem x]
     )
     in
-    List.concat outer_item_list *)
+    List.concat outer_item_list 
 
-    let ditems = List.concat_map ~f:ditem
+    (* let ditems = List.concat_map ~f:ditem *)
 
     let dexpr (_e : A.expr) : B.expr =
       Stdlib.failwith "Should not be called directly"
