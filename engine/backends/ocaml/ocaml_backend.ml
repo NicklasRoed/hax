@@ -187,7 +187,13 @@ struct
             (match arity with
             | 1 ->
               let unary_arg = List.nth_exn args 0 in
-              string op ^^ space ^^ parens unary_arg#p
+              (match op with
+                | "-" ->
+                  (match unary_arg#v.typ with
+                  | TFloat _ ->
+                    string op ^^ string "." ^^ space ^^ parens unary_arg#p
+                  | _ -> string op ^^ space ^^ parens unary_arg#p)
+                | _ -> string op ^^ space ^^ parens unary_arg#p)
             | 2 ->
               let binary_arg1 = List.nth_exn args 0 in
               let binary_arg2 = List.nth_exn args 1 in
@@ -257,9 +263,9 @@ struct
                   else sign ^^ int_size ^^ int_op
                 | (TFloat _, _) | (_, TFloat _) | (_, TArrow (_, TFloat _)) | (TArrow (_, TFloat _), _) ->
                   (match op with
-                      | "+" | "-" | "*" | "/" | "=" | "<" | "<=" | ">" | ">=" | "<>" ->
+                      | "+" | "-" | "*" | "/" ->
                       parens binary_arg1#p ^^ space ^^ string op ^^ string "." ^^ space ^^ parens binary_arg2#p
-                      | _ -> string "What2")
+                      | _ -> parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p)
                 | _ ->
                   if String.equal "Array.get" op then
                     string op ^^ space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p
@@ -755,7 +761,7 @@ struct
             | "crate" :: xs -> 
                 String.capitalize (Option.value ~default:"Crate" 
                   (Option.bind current_namespace ~f:List.hd)) ^
-                (if List.length xs > 0 then "." else "") ^
+                (if List.length xs > 0 then "_" else "") ^
                 String.concat ~sep:"." (List.map ~f:String.capitalize xs)
             | "super" :: xs ->
                 let parent_namespace = 
