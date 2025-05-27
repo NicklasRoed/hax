@@ -568,34 +568,161 @@ module%inlined_contents Make (FA : Features.T) = struct
 
   include Item
 
-  let rename_trait_impl_calls (f : A.ty -> concrete_ident -> concrete_ident) =
+  type impl_description = {
+    ident : Concrete_ident.t;
+    trait : Concrete_ident.t;
+    typ : A.ty;
+  }
+
+  type ident_assoc = (impl_description * Concrete_ident.t) list
+
+  let map_typ_to_str (typ: A.ty) =
+    match typ with
+    | TBool -> "bool"
+    | TChar -> "char"
+    | TInt { size; signedness; } ->
+      let arch_size = phys_equal size SSize in
+      let size_doc = match size with
+        | S8 -> "8"
+        | S16 -> "16"
+        | S32 -> "32"
+        | S64 -> "64"
+        | S128 -> "128"
+        | SSize -> 
+          match signedness with
+          | Unsigned ->
+            "usize"
+          | Signed ->
+            "isize"
+      in
+      let sign_doc = match signedness with
+        | Unsigned -> 
+          if arch_size then
+            ""
+          else "u"
+        | Signed -> 
+          if arch_size then
+            ""
+          else "i"
+      in sign_doc ^ size_doc
+    | TFloat _ -> "float"
+    | TStr -> "string"
+    | TApp { ident = `Concrete x; _ } | TApp { ident = `Projector (`Concrete x ); _ }  -> (RenderId.render x).name
+    | TApp _ -> "placeholder"
+    | TArray _ -> "array"
+    | TSlice _ -> "slice"
+    | TRawPointer _ -> "raw_pointer"
+    | TRef _ -> "ref"
+    | TParam _ -> "param"
+    | TArrow _ -> "arrow"
+    | TAssociatedType _ -> "assc_type"
+    | TOpaque _ -> "opaque"
+    | TDyn _ -> "dyn"
+  
+  let construct_type_aware_mapping item =
     (object
-       inherit [_] AVisitors.map as super
-       method! visit_concrete_ident (typ : A.ty) ident = f typ ident
+        inherit [_] AVisitors.reduce as super
 
-       method! visit_global_ident typ (x : Global_ident.t) =
-         match x with
-         | `Concrete x -> `Concrete (f typ x)
-         | `Projector (`Concrete x) -> `Projector (`Concrete (f typ x))
-         | _ -> super#visit_global_ident typ x
+        method zero = []
+        method plus l1 l2 = l1 @ l2
+        
+        method! visit_item' () item' =
+          match item' with
+          | A.Impl {items = impl_items; of_trait = (trait_id, _); self_ty; _ } ->
+            let extract_impl_desc (impl_item : A.impl_item) =
+              match impl_item.ii_v with
+              | A.IIFn _ ->
+                let desc = {
+                  ident = impl_item.ii_ident;
+                  trait = trait_id;
+                  typ = self_ty;
+                }
+                in
+                let trait_to_str = (RenderId.render (trait_id)).name in
+                let new_name = Concrete_ident.map_path_strings ~f:(fun x -> trait_to_str ^ "_" ^ x ^ "_" ^ (map_typ_to_str self_ty)) desc.ident in
+                [(desc, new_name)]
+              | _ -> []
+            in            
+            List.concat (List.map ~f:(fun impl_item -> extract_impl_desc impl_item) impl_items)
+          | _ -> super#visit_item' () item'
+    end)
+      #visit_item () item
 
-       method! visit_expr _ e = match e.e with _ -> super#visit_expr e.typ e
+  let check_eq_key (desc : impl_description) (id : impl_description) =
+    let desc_name = (RenderId.render desc.ident).name in
+    let id_name = (RenderId.render id.ident).name in
+    String.equal desc_name id_name &&
+    Concrete_ident.equal desc.trait id.trait &&
+    UA.ty_equality desc.typ id.typ
+    
+  let rename_trait_impl_calls (map : ident_assoc) =
+    (object
+      inherit [_] AVisitors.map as super
+
+      method! visit_expr _ e = 
+        match e.e with 
+        | App { f = f'; args; generic_args; bounds_impls; trait } ->
+          let call_typ = (List.hd_exn args).typ in
+          let new_f =
+            match f' with
+            | { e = GlobalVar global_ident; _ } ->
+              (match global_ident with
+                | `Concrete x ->
+                  (match trait with
+                  | Some trait_info -> 
+                    let call_trait_ident = (fst trait_info).goal.trait in
+                    let call_desc =
+                      { 
+                        ident = x;
+                        trait = call_trait_ident;
+                        typ = call_typ
+                      }
+                    in
+                    (match List.find ~f:(fun (desc, _) -> check_eq_key call_desc desc) map with
+                      | Some (_, new_ident) -> 
+                        { f' with e = GlobalVar (`Concrete new_ident) }
+                      | None -> f')
+                  | None -> f')
+                | `Projector (`Concrete x) ->
+                  (match trait with
+                  | Some trait_info -> 
+                    let call_trait_ident = (fst trait_info).goal.trait in
+                    let call_desc =
+                      { 
+                        ident = x;
+                        trait = call_trait_ident;
+                        typ = call_typ
+                      }
+                    in
+                    (match List.find ~f:(fun (desc, _) -> (check_eq_key call_desc desc)) map with
+                      | Some (_, new_ident) -> 
+                        { f' with e = GlobalVar (`Projector (`Concrete new_ident)) }
+                      | None -> f')
+                  | None -> f')
+                | _ -> f')
+            | _ -> f'
+          in
+          { e with e = App { f = new_f; args; generic_args; bounds_impls; trait } }
+        | _ -> super#visit_expr e.typ e
     end)
       #visit_item TBool (* Dummy value *)
 
-  let change_impl_calls (items : A.item list) =
-    List.map ~f:
-      (rename_trait_impl_calls (fun _typ ident ->
-        Concrete_ident.map_path_strings ~f:(fun x -> x ^ "_typ") ident)
-      ) items
+  let change_impl_calls (items : A.item list) (mapping : ident_assoc) =
+    List.map ~f:(rename_trait_impl_calls mapping) items
 
-    
   let ditems (items : A.item list) : B.item list =
-    let items = change_impl_calls items in
+    let mapping = 
+      List.concat (
+        List.map ~f:(
+          fun item -> construct_type_aware_mapping item
+        ) 
+      items)
+    in
+    let items = change_impl_calls items mapping in
     let outer_item_list = List.bind items ~f:(fun x ->
       match x.v with
-      | Impl (* { items = impl_items; safety; of_trait;_ } *) _ -> []
-      (* let inner_item_list = List.concat_map impl_items ~f:(fun impl_item ->
+      | Impl { items = impl_items; safety; of_trait;_ } ->
+        let inner_item_list = List.concat_map impl_items ~f:(fun impl_item ->
           match impl_item.ii_v with
           | IIFn { body; params } ->
             let trait_name = (RenderId.render (fst of_trait)).name in
@@ -615,7 +742,7 @@ module%inlined_contents Make (FA : Features.T) = struct
             result_list 
           | _ -> []
         ) in
-          inner_item_list *)
+          inner_item_list
       | Trait _ -> []
       | _ -> [ditem x]
     )

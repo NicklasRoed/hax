@@ -312,7 +312,8 @@ struct
             | 3 ->
               string op ^^ concat_map (fun x -> space ^^ parens x#p) args
             )
-        | _ -> f#p ^^ concat_map (fun x -> space ^^ parens x#p) args)
+        | _ -> 
+          f#p ^^ concat_map (fun x -> space ^^ parens x#p) args)
 
       method expr'_App_constant ~super:_ ~constant ~generics:_ =
         constant#p
@@ -363,7 +364,6 @@ struct
             space ^^ parens ((separate_map (comma ^^ space) (fun x -> (snd x)#p) fields))
         in
         if is_record && is_struct then
-        (* In OCaml, records use curly braces with field assignments *)
           match base with
             | Some x ->
               let field_or_proj = List.map ~f:(fun x ->
