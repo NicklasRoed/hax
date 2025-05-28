@@ -322,17 +322,26 @@ struct
        let rendered = RenderId.render field#v in
        e#p ^^ string "." ^^ string rendered.name
       
-      (* We experience a problem, where size is always 0. *)
+      (* We experience a problem, where size is always 0. Fixed by not using size *)
       method expr'_App_tuple_projection ~super ~size ~nth ~e = 
-        match (size, nth) with
+        let actual_size = 
+          (match e#v.typ with
+            | TApp {ident; _ } ->
+              (match ident with
+              | `TupleType x -> x 
+              | _ -> 0)
+            | _ -> 0
+            )
+        in
+        match (actual_size, nth) with
         | (2, 0) -> string "fst" ^^ space ^^ e#p
         | (2, 1) -> string "snd" ^^ space ^^ e#p
         | (_, _) ->
             string "(match" ^^ space ^^ e#p ^^ space ^^ string "with" ^^ break 1 ^^
             string "|" ^^ space ^^ 
             let pattern = 
-              separate (comma ^^ space) (List.init size (fun i -> 
-                if i = nth then string "x" else string "_")) 
+              separate (comma ^^ space) (List.init actual_size (fun i -> 
+                if i = nth then string "x" else string "_"))
             in
             parens pattern ^^ space ^^ string "->" ^^ space ^^ string "x" ^^ string ")"
 
