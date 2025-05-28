@@ -574,7 +574,76 @@ module%inlined_contents Make (FA : Features.T) = struct
     typ : A.ty;
   }
 
+  type monomorphized_fn = {
+    original_ident : concrete_ident;
+    new_ident : concrete_ident;
+    real_type : A.ty;
+    trait_ident : concrete_ident;
+  }
+
+  type monomorphized_fn_description = {
+    original_ident : concrete_ident;
+    real_type : A.ty;
+  }
+
   type ident_assoc = (impl_description * Concrete_ident.t) list
+
+  let has_trait_bounds (generics : A.generics) =
+    List.exists generics.constraints ~f:(function
+      | GCType impl_ident -> 
+        let trait_name = (RenderId.render impl_ident.goal.trait).name in
+        not (String.equal trait_name "Sized")
+      | _ -> false
+    )
+
+  let extract_trait_bounds (generics : A.generics) : (local_ident * concrete_ident) list =
+    List.concat_map generics.constraints ~f:(function
+      | GCType impl_ident ->
+        let trait_name = (RenderId.render impl_ident.goal.trait).name in
+        if String.equal trait_name "Sized" then
+          []
+        else
+          List.filter_map impl_ident.goal.args ~f:(function
+            | GType (TParam type_param) -> 
+              Some (type_param, impl_ident.goal.trait)
+            | _ -> None)
+      | _ -> [])
+
+  let find_impl_types (trait_id : Concrete_ident.t) (items : A.item list) =
+    List.filter_map items ~f:(
+      fun item ->
+        match item.v with
+        | A.Impl { of_trait = (impl_trait_id, _); self_ty; _ } 
+          when Concrete_ident.equal trait_id impl_trait_id ->
+            Some self_ty
+        | _ -> None
+    )
+
+  let uses_trait_methods (_trait_bounds : (local_ident * concrete_ident) list) =
+    object
+      inherit [_] AVisitors.reduce as super
+      method zero = false
+      method plus = (||)
+        
+      method! visit_expr () e =
+        match e.e with
+        | App { f = { e = GlobalVar (`Concrete _); _ }; trait = Some _; _ } ->
+          true
+        | App { bounds_impls = bounds; _ } when not (List.is_empty bounds) -> 
+          true
+        | _ -> super#visit_expr () e
+    end
+
+  let substitute_type_param (type_param : local_ident) (concrete_ty : A.ty) =
+    object
+      inherit [_] AVisitors.map as super  
+      
+      method! visit_ty () ty =
+        match ty with
+        | TParam param when String.equal (RenderId.local_ident param) (RenderId.local_ident type_param) ->
+          concrete_ty
+        | _ -> super#visit_ty () ty
+    end
 
   let map_typ_to_str (typ: A.ty) =
     match typ with
@@ -647,6 +716,28 @@ module%inlined_contents Make (FA : Features.T) = struct
           | _ -> super#visit_item' () item'
     end)
       #visit_item () item
+  
+  let generate_monomorphized_functions (items : A.item list) =
+    List.concat_map items ~f:(fun item ->
+      match item.v with
+      | A.Fn { name; generics; body; _ } when has_trait_bounds generics ->
+        let trait_bounds = extract_trait_bounds generics in
+        List.concat_map trait_bounds ~f:(fun (_, trait_id) ->
+          let implementing_types = find_impl_types trait_id items in
+          let needs_monomorphization = 
+            (uses_trait_methods trait_bounds)#visit_expr () body in
+          if needs_monomorphization then
+            List.map implementing_types ~f:(fun concrete_ty ->
+              let new_name = Concrete_ident.map_path_strings name 
+                ~f:(fun x -> x ^ "_" ^ (map_typ_to_str concrete_ty)) in
+              {
+                original_ident = name;
+                new_ident = new_name;
+                real_type = concrete_ty;
+                trait_ident = trait_id;
+              })
+          else [])
+      | _ -> [])
 
   let check_eq_key (desc : impl_description) (id : impl_description) =
     let desc_name = (RenderId.render desc.ident).name in
@@ -654,6 +745,13 @@ module%inlined_contents Make (FA : Features.T) = struct
     String.equal desc_name id_name &&
     Concrete_ident.equal desc.trait id.trait &&
     UA.ty_equality desc.typ id.typ
+
+  let check_eq_monomorphized_key (call_desc : monomorphized_fn_description) (mono_fn : monomorphized_fn) =
+    let call_name = (RenderId.render call_desc.original_ident).name in
+    let mono_name = (RenderId.render mono_fn.original_ident).name in
+    String.equal call_name mono_name  &&
+    Concrete_ident.equal call_desc.original_ident mono_fn.original_ident &&
+    UA.ty_equality call_desc.real_type mono_fn.real_type
     
   let rename_trait_impl_calls (map : ident_assoc) =
     (object
@@ -694,7 +792,7 @@ module%inlined_contents Make (FA : Features.T) = struct
                         typ = call_typ
                       }
                     in
-                    (match List.find ~f:(fun (desc, _) -> (check_eq_key call_desc desc)) map with
+                    (match List.find ~f:(fun (desc, _) -> check_eq_key call_desc desc) map with
                       | Some (_, new_ident) -> 
                         { f' with e = GlobalVar (`Projector (`Concrete new_ident)) }
                       | None -> f')
@@ -707,47 +805,221 @@ module%inlined_contents Make (FA : Features.T) = struct
     end)
       #visit_item TBool (* Dummy value *)
 
+  let find_trait_bounded_type (fn_id : concrete_ident) (args : A.expr list) (return_typ : A.ty) (items : A.item list) : A.ty option =
+    List.find_map items ~f:(fun item ->
+      match item.v with
+      | A.Fn { name; generics; params; body; _ } when Concrete_ident.equal name fn_id ->
+        let trait_bounds = extract_trait_bounds generics in            
+        let param_result = 
+          match List.zip params args with
+          | Ok param_arg_pairs ->
+            List.find_map param_arg_pairs ~f:(fun (param, arg) ->
+              match param.typ with
+              | TParam type_param ->
+                if List.exists trait_bounds ~f:(fun (tp, _) -> 
+                    String.equal tp.name type_param.name) then
+                      Some arg.typ
+                else None
+              | _ -> None)
+          | Unequal_lengths -> None
+        in
+        (match param_result with
+        | Some typ -> Some typ
+        | None ->
+          let function_return_type = body.typ in
+          (match function_return_type with
+          | TParam type_param ->
+            if List.exists trait_bounds ~f:(fun (tp, _) -> 
+                String.equal tp.name type_param.name) then
+                  Some return_typ
+            else None
+          | _ -> None))
+      | _ -> None)
+
+  let rename_all_calls (impl_map : ident_assoc) (fn_map : monomorphized_fn list) (all_items : A.item list) =
+    object
+      inherit [_] AVisitors.map as super
+          
+      method! visit_expr _ e =
+        match e.e with
+        | App { f = { e = GlobalVar (`Concrete f_id); _ } as f'; args; generic_args; bounds_impls; trait } ->
+          let relevant_bounds = List.filter bounds_impls ~f:(fun impl_expr ->
+            let trait_name = (RenderId.render impl_expr.goal.trait).name in
+            not (String.equal trait_name "Sized")) in
+          let call_context = 
+            if not (List.is_empty relevant_bounds) || Option.is_some trait then
+              find_trait_bounded_type f_id args e.typ all_items
+            else
+              match args with
+              | first_arg :: _ -> Some first_arg.typ
+              | [] -> None
+          in 
+          (match call_context with
+          | Some concrete_type ->
+            let call_desc = {
+              original_ident = f_id;
+              real_type = concrete_type;
+            } in
+            (match List.find fn_map ~f:( check_eq_monomorphized_key call_desc ) with
+            | Some mono_fn ->
+              { e with e = App { 
+                  f = { 
+                    f' with e = GlobalVar (`Concrete mono_fn.new_ident) 
+                  }; 
+                  args; generic_args; 
+                  bounds_impls = []; 
+                  trait = None
+                }
+              }
+            | None ->
+              (match trait with
+              | Some trait_info ->
+                let call_trait_ident = (fst trait_info).goal.trait in
+                let impl_call_desc = {
+                  ident = f_id;
+                  trait = call_trait_ident;
+                  typ = concrete_type
+                } in
+                (match List.find impl_map ~f:(fun (desc, _) -> check_eq_key impl_call_desc desc) with
+                | Some (_, new_ident) -> 
+                  { e with e = App { 
+                    f = { f' with e = GlobalVar (`Concrete new_ident) }; 
+                    args; generic_args; 
+                    bounds_impls;
+                    trait = None
+                  }}
+                | None -> super#visit_expr e.typ e)
+              | None ->
+                super#visit_expr e.typ e))
+          | None ->
+            (match trait with
+            | Some _ ->
+              super#visit_expr e.typ e
+            | None -> 
+              super#visit_expr e.typ e))
+        | App { f = { e = GlobalVar (`Projector (`Concrete f_id)); _ } as f'; args; generic_args; bounds_impls; trait } ->
+          let relevant_bounds = List.filter bounds_impls ~f:(fun impl_expr ->
+            let trait_name = (RenderId.render impl_expr.goal.trait).name in
+            not (String.equal trait_name "Sized")) in
+          let call_context = 
+            if not (List.is_empty relevant_bounds) || Option.is_some trait then
+              find_trait_bounded_type f_id args e.typ all_items
+            else
+              match args with
+              | first_arg :: _ -> Some first_arg.typ
+              | [] -> None
+          in          
+          (match call_context with
+          | Some concrete_type ->
+            let call_desc = {
+              original_ident = f_id;
+              real_type = concrete_type;
+            } in
+            (match List.find fn_map ~f:(check_eq_monomorphized_key call_desc) with
+            | Some mono_fn ->
+              { e with e = App { 
+                f = { f' with e = GlobalVar (`Projector (`Concrete mono_fn.new_ident)) }; 
+                args; generic_args; 
+                bounds_impls = []; 
+                trait = None
+              }}
+            | None ->
+              (match trait with
+              | Some trait_info ->
+                let call_trait_ident = (fst trait_info).goal.trait in
+                let impl_call_desc = {
+                  ident = f_id;
+                  trait = call_trait_ident;
+                  typ = concrete_type
+                } in
+                (match List.find impl_map ~f:(fun (desc, _) -> check_eq_key impl_call_desc desc) with
+                | Some (_, new_ident) -> 
+                  { e with e = App { 
+                    f = { f' with e = GlobalVar (`Projector (`Concrete new_ident)) }; 
+                    args; generic_args; 
+                    bounds_impls;
+                    trait = None
+                  }}
+                | None -> super#visit_expr e.typ e)
+              | None -> super#visit_expr e.typ e))
+          | None ->
+            (match trait with
+            | Some _ -> super#visit_expr e.typ e
+            | None -> super#visit_expr e.typ e))
+        | _ -> super#visit_expr e.typ e
+    end
+
   let change_impl_calls (items : A.item list) (mapping : ident_assoc) =
     List.map ~f:(rename_trait_impl_calls mapping) items
 
   let ditems (items : A.item list) : B.item list =
-    let mapping = 
-      List.concat (
-        List.map ~f:(
-          fun item -> construct_type_aware_mapping item
-        ) 
-      items)
-    in
-    let items = change_impl_calls items mapping in
-    let outer_item_list = List.bind items ~f:(fun x ->
-      match x.v with
-      | Impl { items = impl_items; safety; of_trait;_ } ->
-        let inner_item_list = List.concat_map impl_items ~f:(fun impl_item ->
+    let impl_mapping = 
+      List.concat (List.map items ~f:construct_type_aware_mapping)
+    in  
+    let fn_monomorphizations = generate_monomorphized_functions items in
+    let create_monomorphized_item (mono_fn : monomorphized_fn) : A.item option =
+      List.find_map items ~f:(fun item ->
+        match item.v with
+        | A.Fn { name; generics; body; params; safety } 
+          when Concrete_ident.equal name mono_fn.original_ident ->
+          let type_param = List.find_map generics.params ~f:(fun param ->
+            match param.kind with
+            | GPType -> Some param.ident
+            | _ -> None) in
+          (match type_param with
+          | Some tp ->
+            let substitution_visitor = substitute_type_param tp mono_fn.real_type in
+            let substituted_body = substitution_visitor#visit_expr () body in
+            let substituted_params = List.map params ~f:(fun param ->
+              { param with typ = substitution_visitor#visit_ty () param.typ }) in              
+            Some { item with 
+              v = A.Fn { 
+                name = mono_fn.new_ident; 
+                generics = { params = []; constraints = [] };
+                body = substituted_body; 
+                params = substituted_params; 
+                safety 
+              };
+              ident = mono_fn.new_ident 
+            }
+          | None -> None)
+        | _ -> None)
+    in      
+    let monomorphized_fn_items = List.filter_map fn_monomorphizations ~f:create_monomorphized_item in      
+    let complete_items = items @ monomorphized_fn_items in      
+    let items_with_impl_renames = change_impl_calls complete_items impl_mapping in      
+    let items_with_all_renames = 
+      (rename_all_calls impl_mapping fn_monomorphizations items_with_impl_renames)#visit_modul TBool items_with_impl_renames
+    in      
+    let processed_items = List.concat_map items_with_all_renames ~f:(fun item ->
+      match item.v with
+      | A.Impl { items = impl_items; safety; of_trait; self_ty; _ } ->
+        List.concat_map impl_items ~f:(fun impl_item ->
           match impl_item.ii_v with
           | IIFn { body; params } ->
             let trait_name = (RenderId.render (fst of_trait)).name in
-            let result_list = 
-                [ditem { x with v = 
-                    A.Fn {
-                    name = Concrete_ident.map_path_strings ~f:(fun x -> trait_name ^ "_" ^ x) impl_item.ii_ident;
-                    generics = impl_item.ii_generics;
-                    body = body;
-                    params = params;
-                    safety = safety;
+            let type_suffix = map_typ_to_str self_ty in
+            let new_name = Concrete_ident.map_path_strings impl_item.ii_ident 
+              ~f:(fun x -> trait_name ^ "_" ^ x ^ "_" ^ type_suffix) in
+            [ditem { item with v = 
+                A.Fn {
+                  name = new_name;
+                  generics = impl_item.ii_generics;
+                  body = body;
+                  params = params;
+                  safety = safety;
                 };
-                ident =
-                  Concrete_ident.map_path_strings ~f:(fun x -> trait_name ^ "_" ^ x) impl_item.ii_ident
-              }]
-            in
-            result_list 
-          | _ -> []
-        ) in
-          inner_item_list
-      | Trait _ -> []
-      | _ -> [ditem x]
-    )
-    in
-    List.concat outer_item_list 
+              ident = new_name
+            }]
+          | _ -> [])        
+      | A.Fn { name; generics; _ } when has_trait_bounds generics &&
+        List.exists fn_monomorphizations ~f:(fun mono_fn -> 
+          Concrete_ident.equal mono_fn.original_ident name) ->
+        []        
+      | A.Trait _ -> []        
+      | _ -> [ditem item]
+    ) in 
+    List.concat processed_items
 
     (* let ditems = List.concat_map ~f:ditem *)
 

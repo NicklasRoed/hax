@@ -543,20 +543,8 @@ struct
       method generic_value_GType x1 =
         x1#p
 
-      method generics ~params ~constraints =
-        let constraints_doc = List.filter ~f:(
-          fun x ->
-            match x#v with
-            | GCType impl_ident ->
-              not (String.equal ((RenderId.render impl_ident.goal.trait).name) "Sized")
-            | _ -> true
-        ) constraints
-        in
-        if List.is_empty params then 
-          empty
-        else
-          separate_map space (fun p -> p#p) params ^^ space ^^
-          separate_map space (fun p -> parens p#p) constraints_doc
+      method generics ~params ~constraints:_ =
+        separate_map space (fun p -> p#p) params ^^ space
           
       method guard ~guard:_ ~span:_ = default_document_for "guard"
 
