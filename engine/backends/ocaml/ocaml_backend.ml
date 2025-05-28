@@ -1011,10 +1011,7 @@ struct
       method ty_TOpaque x1 = x1#p
       method ty_TParam x1 = 
         let name = x1#v.name in
-        if String.equal (String.lowercase name) "self" then
-          string ("'" ^ String.lowercase name)
-        else
-          string (String.lowercase name)
+        string ("'" ^ String.lowercase name)
 
       method ty_TRawPointer ~witness:_ = default_document_for "ty_TRawPointer"
 
