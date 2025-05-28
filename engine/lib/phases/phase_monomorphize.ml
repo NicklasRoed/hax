@@ -605,9 +605,8 @@ module%inlined_contents Make (FA : Features.T) = struct
     List.concat_map generics.constraints ~f:(function
       | GCType impl_ident ->
         let trait_name = (RenderId.render impl_ident.goal.trait).name in
-        (* More robust Sized filtering *)
         if String.is_suffix trait_name ~suffix:"Sized" then
-          [] (* Filter out anything ending with "Sized" *)
+          []
         else
           List.filter_map impl_ident.goal.args ~f:(function
             | GType (TParam type_param) -> 
@@ -625,25 +624,25 @@ module%inlined_contents Make (FA : Features.T) = struct
         | _ -> None
     )
 
-    let uses_trait_methods (trait_bounds : (local_ident * concrete_ident) list) =
-      let relevant_traits = List.map trait_bounds ~f:snd |> Set.of_list (module Concrete_ident) in
-      object
-        inherit [_] AVisitors.reduce as super
-        method zero = false
-        method plus = (||)
-          
-        method! visit_expr () e =
-          match e.e with
-          | App { f = { e = GlobalVar (`Concrete _); _ }; trait = Some (impl_expr, _); _ } ->
-            Set.mem relevant_traits impl_expr.goal.trait
-          | App { bounds_impls = bounds; _ } when not (List.is_empty bounds) ->
-            List.exists bounds ~f:(fun impl_expr ->
-              Set.mem relevant_traits impl_expr.goal.trait)
-          | _ -> super#visit_expr' () e.e
-      end
-
-  let substitute_multiple_type_params (type_instantiations : type_instantiation list) =
+  let uses_trait_methods (trait_bounds : (local_ident * concrete_ident) list) =
+    let relevant_traits = List.map trait_bounds ~f:snd |> Set.of_list (module Concrete_ident) in
     object
+      inherit [_] AVisitors.reduce as super
+      method zero = false
+      method plus = (||)
+        
+      method! visit_expr () e =
+        match e.e with
+        | App { f = { e = GlobalVar (`Concrete _); _ }; trait = Some (impl_expr, _); _ } ->
+          Set.mem relevant_traits impl_expr.goal.trait
+        | App { bounds_impls = bounds; _ } when not (List.is_empty bounds) ->
+          List.exists bounds ~f:(fun impl_expr ->
+            Set.mem relevant_traits impl_expr.goal.trait)
+        | _ -> super#visit_expr' () e.e
+    end
+
+  let substitute_multiple_type_params (type_instantiations : type_instantiation list) (items : A.item list) =
+    object (self)
       inherit [_] AVisitors.map as super  
       
       method! visit_ty () ty =
@@ -653,18 +652,37 @@ module%inlined_contents Make (FA : Features.T) = struct
              String.equal (RenderId.local_ident param) (RenderId.local_ident inst.type_param)) with
           | Some inst -> inst.concrete_type
           | None -> ty)
+        | TAssociatedType { impl; item } ->
+          (match impl.goal.args with
+          | GType (TParam type_param) :: _ ->
+            (match List.find type_instantiations ~f:(fun inst -> 
+               String.equal (RenderId.local_ident type_param) (RenderId.local_ident inst.type_param)) with
+            | Some inst ->
+              (match self#find_associated_type_in_impl_blocks inst.concrete_type impl.goal.trait item with
+              | Some resolved_ty -> resolved_ty
+              | None -> ty)
+            | None -> ty)
+          | _ -> ty)
         | _ -> super#visit_ty () ty
-    end
-
-  let substitute_type_param (type_param : local_ident) (concrete_ty : A.ty) =
-    object
-      inherit [_] AVisitors.map as super  
-      
-      method! visit_ty () ty =
-        match ty with
-        | TParam param when String.equal (RenderId.local_ident param) (RenderId.local_ident type_param) ->
-          concrete_ty
-        | _ -> super#visit_ty () ty
+        
+      method private find_associated_type_in_impl_blocks (concrete_type : A.ty) (trait_id : concrete_ident) (assoc_item : concrete_ident) : A.ty option =
+        let trait_name = (RenderId.render trait_id).name in
+        let assoc_item_name = (RenderId.render assoc_item).name in
+        List.find_map items ~f:(fun item ->
+          match item.v with
+          | A.Impl { of_trait = (impl_trait_id, _); self_ty; items = impl_items; _ } ->
+            let impl_trait_name = (RenderId.render impl_trait_id).name in
+            if String.equal impl_trait_name trait_name && UA.ty_equality self_ty concrete_type then
+              List.find_map impl_items ~f:(fun impl_item ->
+                let impl_item_name = (RenderId.render impl_item.ii_ident).name in
+                match impl_item.ii_v with
+                | IIType { typ; _ } when String.equal impl_item_name assoc_item_name ->
+                  Some typ
+                | _ -> None
+              )
+            else None
+          | _ -> None
+        )
     end
 
   let map_typ_to_str (typ: A.ty) =
@@ -876,7 +894,6 @@ module%inlined_contents Make (FA : Features.T) = struct
       | A.Fn { name; generics; params; body; _ } when Concrete_ident.equal name fn_id ->
         let trait_bounds = extract_trait_bounds generics in
         let bounded_type_params = List.map trait_bounds ~f:fst |> List.dedup_and_sort ~compare:[%compare: local_ident] in
-        
         let param_instantiations = 
           match List.zip params args with
           | Ok param_arg_pairs ->
@@ -888,9 +905,10 @@ module%inlined_contents Make (FA : Features.T) = struct
                   Some (type_param, arg.typ)
                 else None
               | _ -> None)
+            |> List.dedup_and_sort ~compare:(fun (p1, _) (p2, _) -> 
+                 String.compare (RenderId.local_ident p1) (RenderId.local_ident p2))
           | Unequal_lengths -> []
         in
-        
         let return_instantiation =
           match body.typ with
           | TParam type_param ->
@@ -900,7 +918,6 @@ module%inlined_contents Make (FA : Features.T) = struct
             else []
           | _ -> []
         in
-        
         let all_instantiations = param_instantiations @ return_instantiation in
         if List.is_empty all_instantiations then None else Some all_instantiations
       | _ -> None)
@@ -954,7 +971,8 @@ module%inlined_contents Make (FA : Features.T) = struct
             | Some mono_fn ->
               { e with e = App { 
                   f = { f' with e = GlobalVar (`Concrete mono_fn.new_ident) }; 
-                  args; generic_args; 
+                  args; 
+                  generic_args; 
                   bounds_impls = []; 
                   trait = None
                 }
@@ -976,7 +994,8 @@ module%inlined_contents Make (FA : Features.T) = struct
                 | Some (_, new_ident) -> 
                   { e with e = App { 
                     f = { f' with e = GlobalVar (`Concrete new_ident) }; 
-                    args; generic_args; 
+                    args; 
+                    generic_args; 
                     bounds_impls;
                     trait = None
                   }}
@@ -1062,7 +1081,7 @@ module%inlined_contents Make (FA : Features.T) = struct
       match item.v with
       | A.Fn { name; generics; body; params; safety } 
         when Concrete_ident.equal name mono_fn.original_ident ->
-        let substitution_visitor = substitute_multiple_type_params mono_fn.type_instantiations in
+        let substitution_visitor = substitute_multiple_type_params mono_fn.type_instantiations items in
         let substituted_body = substitution_visitor#visit_expr () body in
         let substituted_params = List.map params ~f:(fun param ->
           { param with typ = substitution_visitor#visit_ty () param.typ }) in
