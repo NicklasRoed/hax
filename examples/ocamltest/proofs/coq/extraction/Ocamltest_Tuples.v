@@ -10,6 +10,11 @@ Require Import Coq.Floats.Floats.
 From RecordUpdate Require Import RecordSet.
 Import RecordSetNotations.
 
-
-
 (* NotImplementedYet *)
+
+Definition main (_ : unit) : unit :=
+  let x : (t_i32*t_i32*t_i32) := (6,5,4) in
+  let x1 := TODO: please implement the method `expr'_App_tuple_projection` in
+  let x2 := TODO: please implement the method `expr'_App_tuple_projection` in
+  let x3 := TODO: please implement the method `expr'_App_tuple_projection` in
+  tt.

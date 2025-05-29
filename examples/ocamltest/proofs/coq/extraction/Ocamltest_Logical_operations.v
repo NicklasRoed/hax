@@ -10,6 +10,8 @@ Require Import Coq.Floats.Floats.
 From RecordUpdate Require Import RecordSet.
 Import RecordSetNotations.
 
-
-
 (* NotImplementedYet *)
+
+Definition main (_ : unit) : unit :=
+  let x := andb (f_lt (2) (3)) (f_lt (3) (4)) in
+  tt.
