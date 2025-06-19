@@ -99,7 +99,7 @@ struct
         match size with 
         | SSize ->
             is_arch := true;
-            string "int"
+            string "nativeint"
           | S8 -> 
             string "8"
           | S16 ->
@@ -123,6 +123,39 @@ struct
             else string "Uint" 
         in int_sign ^^ int_size
     | _ -> empty
+
+    let doc_int_kind_for_cast (typ: AST.ty) = 
+      match typ with
+      | TInt {size; signedness} ->
+        let is_arch = ref false in
+        let int_size = 
+          match size with 
+          | SSize ->
+              is_arch := true;
+              string "nativeint"
+            | S8 -> 
+              string "8"
+            | S16 ->
+              string "16"
+            | S32 ->
+              string "32"
+            | S64 ->
+              string "64"
+            | S128 ->
+              string "128"
+          in
+          let int_sign = 
+            match signedness with
+            | Signed -> 
+              if !is_arch then
+                empty
+              else string "int"
+            | Unsigned -> 
+              if !is_arch then
+                empty
+              else string "uint" 
+          in int_sign ^^ int_size
+      | _ -> empty
 
   type ('get_span_data, 'a) object_type =
     ('get_span_data, 'a) BasePrinter.Gen.object_type  
@@ -220,79 +253,91 @@ struct
                   | TFloat _ ->
                     string op ^^ string "." ^^ space ^^ parens unary_arg#p
                   | TInt {size; signedness} ->
-                    (** TODO: Refactor this behavior. 
-                        In particular, isolate this logic in a function
-                        that formats int_kinds as OCaml-like **)
-                    doc_int_kind unary_arg#v.typ ^^ string ".neg" ^^ space ^^ unary_arg#p
+                    if size == SSize then
+                      string "Nativeint.neg" ^^ space ^^ parens unary_arg#p
+                    else
+                      doc_int_kind unary_arg#v.typ ^^ string ".neg" ^^ space ^^ unary_arg#p
                   | _ -> string op ^^ space ^^ parens unary_arg#p)
+                | "lnot" ->
+                  (match unary_arg#v.typ with
+                    | TInt {size; _} ->
+                      if size == SSize then
+                        string "Nativeint.lognot" ^^ space ^^ parens unary_arg#p
+                      else
+                        doc_int_kind unary_arg#v.typ ^^ string ".lognot" ^^ space ^^ parens unary_arg#p
+                    | _ -> 
+                      string op ^^ space ^^ parens unary_arg#p)
                 | _ -> string op ^^ space ^^ parens unary_arg#p)
             | 2 ->
               let binary_arg1 = List.nth_exn args 0 in
               let binary_arg2 = List.nth_exn args 1 in
               (match (binary_arg1#v.typ, binary_arg2#v.typ) with
                 | (TInt {size; signedness}, _) | (_, TInt {size; signedness}) ->
-                  let is_arch = ref false in 
-                  let int_size = match size with
-                  | SSize -> 
-                    is_arch := true;
-                    parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p
-                  | S8 ->
-                    string "8"
-                  | S16 ->
-                    string "16"
-                  | S32 ->
-                    string "32"
-                  | S64 ->
-                    string "64"
-                  | S128 ->
-                    string "128"
-                in
-                let sign = match signedness with
-                  | Signed -> 
-                    if !is_arch then
-                      empty
-                    else string "Int"
-                  | Unsigned -> 
-                    if !is_arch then
-                      empty
-                    else string "Uint"
-                in
-                let int_op = match op with
-                  | "+" | "-" | "*" | "/" ->
-                    string "." ^^ parens (parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p)
-                  | "=" | "<" | "<=" | ">" | ">=" | "<>" ->
-                    if !is_arch == false then
-                      string ".compare" ^^ space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p ^^ space ^^
-                      string op ^^ space ^^ string "0"
-                    else 
-                      parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p
-                  | "mod" ->
-                    string ".rem" ^^ space ^^ parens binary_arg1#p ^^ parens binary_arg2#p
-                  | "lsl" | "lsr" ->
-                    if !is_arch == false then
-                      string ".shift_" ^^ 
-                      (if String.equal op "lsl" then string "left" else string "right") ^^
-                      space ^^ parens binary_arg1#p ^^ space ^^ 
-                      (* Convert shift amount back to regular int using already computed sign and int_size *)
-                      string "(" ^^ sign ^^ int_size ^^ string ".to_int " ^^ 
-                      parens binary_arg2#p ^^ string ")"
-                    else 
-                      parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p
-                  | "land" | "lor" | "lxor" ->
-                    if !is_arch == false then
-                      string ".log" ^^
-                      (match op with
-                        | "land" -> string "and"
-                        | "lor" -> string "or" 
-                        | "lxor" -> string "xor"
-                        | _ -> string "unknown") ^^
-                      space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p
-                    else 
-                      parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p  
-                  | _ -> string "What"
-                  in
-                  if !is_arch == true then int_size
-                  else sign ^^ int_size ^^ int_op
+                  let is_arch = size == SSize in 
+                  let int_op = match op with
+                    | "+" | "-" | "*" | "/" ->
+                      if is_arch then
+                        let nativeint_op = match op with
+                          | "+" -> "add"
+                          | "-" -> "sub" 
+                          | "*" -> "mul"
+                          | "/" -> "div"
+                          | _ -> "unknown"
+                        in
+                        string "Nativeint." ^^ string nativeint_op ^^ space ^^ 
+                        parens binary_arg1#p ^^ space ^^ parens binary_arg2#p
+                      else
+                        doc_int_kind binary_arg1#v.typ ^^ string "." ^^ 
+                        parens (parens binary_arg1#p ^^ space ^^ string op ^^ space ^^ parens binary_arg2#p)
+                    | "=" | "<" | "<=" | ">" | ">=" | "<>" ->
+                      if is_arch then
+                        string "Nativeint.compare" ^^ space ^^ parens binary_arg1#p ^^ space ^^ 
+                        parens binary_arg2#p ^^ space ^^ string op ^^ space ^^ string "0"
+                      else
+                        doc_int_kind binary_arg1#v.typ ^^ string ".compare" ^^ space ^^ 
+                        parens binary_arg1#p ^^ space ^^ parens binary_arg2#p ^^ space ^^
+                        string op ^^ space ^^ string "0"
+                    | "mod" ->
+                      if is_arch then
+                        string "Nativeint.rem" ^^ space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p
+                      else
+                        doc_int_kind binary_arg1#v.typ ^^ string ".rem" ^^ space ^^ 
+                        parens binary_arg1#p ^^ space ^^ parens binary_arg2#p
+                    | "lsl" | "lsr" ->
+                      let shift_amount_literal = 
+                        (match binary_arg2#v.e with
+                        | Literal (Int { value; _ }) -> string value
+                        | _ -> empty)
+                      in
+                      if is_arch then
+                        string "Nativeint.shift_" ^^ 
+                        (if String.equal op "lsl" then string "left" else string "right") ^^
+                        space ^^ parens binary_arg1#p ^^ space ^^ parens shift_amount_literal
+                      else
+                        doc_int_kind binary_arg1#v.typ ^^ string ".shift_" ^^ 
+                        (if String.equal op "lsl" then string "left" else string "right") ^^
+                        space ^^ parens binary_arg1#p ^^ space ^^ 
+                        string "(" ^^ doc_int_kind binary_arg1#v.typ ^^ string ".to_int " ^^ 
+                        parens binary_arg2#p ^^ string ")"
+                    | "land" | "lor" | "lxor" ->
+                      if is_arch then
+                        string "Nativeint.log" ^^
+                        (match op with
+                          | "land" -> string "and"
+                          | "lor" -> string "or" 
+                          | "lxor" -> string "xor"
+                          | _ -> string "unknown") ^^
+                        space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p
+                      else
+                        doc_int_kind binary_arg1#v.typ ^^ string ".log" ^^
+                        (match op with
+                          | "land" -> string "and"
+                          | "lor" -> string "or" 
+                          | "lxor" -> string "xor"
+                          | _ -> string "unknown") ^^
+                        space ^^ parens binary_arg1#p ^^ space ^^ parens binary_arg2#p
+                    | _ -> string "What"
+                  in int_op
                 | (TFloat _, _) | (_, TFloat _) | (_, TArrow (_, TFloat _)) | (TArrow (_, TFloat _), _) ->
                   (match op with
                       | "+" | "-" | "*" | "/" ->
@@ -451,23 +496,35 @@ struct
           match super.typ with
           | TArrow (y1, y2) ->
             let y2_is_int = match y2 with
-              | TInt {size = SSize; _} -> false
+              | TInt {size = SSize; _} -> true
               | TInt _ -> true
               | _ -> false
             in
             match y1 with
             | [TInt {size = SSize; _} as h] -> 
               if y2_is_int == true then
-                doc_int_kind y2 ^^ dot ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+                (match y2 with
+                | TInt {size = SSize; _} -> 
+                  empty
+                | _ ->
+                  doc_int_kind y2 ^^ dot ^^ string "of_nativeint")
               else
-                self#entrypoint_ty y2 ^^ underscore ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+                self#entrypoint_ty y2 ^^ underscore ^^ string "of" ^^ underscore ^^ string "nativeint" ^^ space ^^ parens (self#entrypoint_ty h)
             | [TInt _ as h] ->
-              doc_int_kind h ^^ dot ^^ string "to" ^^ underscore ^^ self#entrypoint_ty y2
+              (match y2 with
+              | TInt {size = SSize; _} ->
+                doc_int_kind h ^^ string ".to_nativeint"
+              | _ ->
+                doc_int_kind h ^^ dot ^^ string "to_" ^^ doc_int_kind_for_cast y2)
             | h :: [] ->
               if y2_is_int == true then
-                doc_int_kind y2 ^^ dot ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+                (match y2 with
+                | TInt {size = SSize; _} ->
+                  string "Nativeint.of_" ^^ self#entrypoint_ty h ^^ space ^^ parens (self#entrypoint_ty h)
+                | _ ->
+                  doc_int_kind y2 ^^ dot ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h ^^ space ^^ parens (self#entrypoint_ty h))
               else 
-                self#entrypoint_ty y2 ^^ underscore ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h
+                self#entrypoint_ty y2 ^^ underscore ^^ string "of" ^^ underscore ^^ self#entrypoint_ty h ^^ space ^^ parens (self#entrypoint_ty h)
             | _ -> string "This should never happen"
           | _ -> string "This should never happen"
         | _ -> string "Unhandled primitive operation"
@@ -859,7 +916,12 @@ struct
               empty
             else string ".of_int" ^^ space
           in
-        sign_doc ^^ size_doc ^^ suffix_doc ^^ (if negative then parens (!^"-" ^^ string value) else string value) 
+          let real_value = 
+            if arch_size then
+              string value ^^ string "n"
+            else string value
+          in
+        sign_doc ^^ size_doc ^^ suffix_doc ^^ (if negative then parens (!^"-" ^^ real_value) else real_value) 
 
       method literal_String x1 = string "\"" ^^ string x1 ^^ string "\""
 
@@ -987,7 +1049,7 @@ struct
         match x1 with
         | { size; signedness } -> 
           if size == SSize then
-            string "int"
+            string "nativeint"
           else   
             (
               (match signedness with
@@ -1096,4 +1158,3 @@ struct
   let apply_phases (_bo : BackendOptions.t) (items : Ast.Rust.item list) :
       AST.item list =
     TransformToInputLanguage.ditems items
-  
